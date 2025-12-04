@@ -1,0 +1,19 @@
+name = "image_resize"
+version = "0.1.0"
+description = "Image Resize Compute Module"
+requires-python = ">=3.9"
+dependencies = [
+    "pillow>=10.0.0",
+    "sqlalchemy>=2.0.0",
+    "paho-mqtt>=1.6.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
