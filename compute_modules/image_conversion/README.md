@@ -99,7 +99,7 @@ This module is automatically discovered and executed by the worker. You don't ru
 To create a job that uses this module:
 
 ```bash
-curl -X POST http://localhost:8001/job/image_conversion \
+curl -X POST http://localhost:8001/compute/jobs/image_conversion \
   -F "upload_files=@image.jpg" \
   -F "external_files=[{\"metadata\": {\"output_format\": \"PNG\"}}]" \
   -F "priority=5"
