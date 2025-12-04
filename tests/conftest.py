@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-# Add src directory to path so modules can be imported
-src_dir = Path(__file__).parent.parent / "src"
-if str(src_dir) not in sys.path:
-    sys.path.insert(0, str(src_dir))
+# Add the parent directory (project root) to Python path so 'src' can be imported
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
