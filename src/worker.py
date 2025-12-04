@@ -92,7 +92,7 @@ def signal_handler(signum, frame):
 def discover_compute_modules() -> Dict[str, Dict]:
     """
     Discover compute modules in compute_modules/ directory.
-    
+
     Returns:
         Dict mapping task_type to module info:
         {
@@ -109,28 +109,36 @@ def discover_compute_modules() -> Dict[str, Dict]:
     if not modules_dir.exists():
         logger.warning(f"Compute modules directory not found: {modules_dir}")
         return {}
-    
+
+    logger.info(f"Scanning for compute modules in: {modules_dir}")
     registry = {}
-    
+
     for module_dir in modules_dir.iterdir():
         if not module_dir.is_dir() or module_dir.name.startswith('.'):
             continue
-        
-        # Check for required files
-        runner_path = module_dir / "runner.py"
-        task_path = module_dir / "task.py"
+
+        # Check for required files in src/ subdirectory
+        src_dir = module_dir / "src"
+        runner_path = src_dir / "runner.py"
+        task_path = src_dir / "task.py"
         pyproject_path = module_dir / "pyproject.toml"
-        
+
+        # Log what we're checking
+        logger.debug(f"Checking module: {module_dir.name}")
+        logger.debug(f"  - runner.py exists at {runner_path}: {runner_path.exists()}")
+        logger.debug(f"  - task.py exists at {task_path}: {task_path.exists()}")
+        logger.debug(f"  - pyproject.toml exists at {pyproject_path}: {pyproject_path.exists()}")
+
         if not all([runner_path.exists(), task_path.exists(), pyproject_path.exists()]):
-            logger.warning(f"Skipping incomplete module: {module_dir.name}")
+            logger.warning(f"Skipping incomplete module: {module_dir.name} (missing required files in src/)")
             continue
-        
+
         # Use folder name as task type (e.g., "image_resize", "image_conversion")
         task_type = module_dir.name
-        
+
         venv_path = module_dir / ".venv"
         python_path = venv_path / "bin" / "python"
-        
+
         registry[task_type] = {
             "module_name": module_dir.name,
             "module_path": module_dir,
@@ -138,9 +146,12 @@ def discover_compute_modules() -> Dict[str, Dict]:
             "venv_path": venv_path,
             "python_path": python_path
         }
-        
-        logger.info(f"Discovered module: {module_dir.name} -> {task_type}")
-    
+
+        logger.info(f"✓ Discovered module: {module_dir.name} -> {task_type}")
+
+    logger.info(f"Total modules discovered: {len(registry)}")
+    logger.info(f"Available task types: {list(registry.keys())}")
+
     return registry
 
 
@@ -210,11 +221,19 @@ class ComputeWorker:
         requested_tasks = set(self.supported_tasks)
         self.active_tasks = available_tasks & requested_tasks
 
-        if not self.active_tasks:
-            logger.warning(f"No matching modules found for tasks: {self.supported_tasks}")
-
+        # Log initialization details
         logger.info(f"Initialized worker {self.worker_id}")
+        logger.info(f"Requested task types: {list(requested_tasks)}")
+        logger.info(f"Available modules: {list(available_tasks)}")
         logger.info(f"Active task types: {list(self.active_tasks)}")
+
+        if not self.active_tasks:
+            if requested_tasks and not available_tasks:
+                logger.error(f"No modules found! Requested: {list(requested_tasks)}, Available: {list(available_tasks)}")
+            elif requested_tasks and available_tasks:
+                logger.warning(f"No matching modules found. Requested: {list(requested_tasks)}, Available: {list(available_tasks)}")
+            else:
+                logger.warning(f"No task types specified")
 
         # Initialize idle count to 1 for each task (can process 1 job at a time)
         for task_type in self.active_tasks:
@@ -238,6 +257,13 @@ class ComputeWorker:
             "capabilities": list(self.active_tasks),
             "idle_count": sum(self.capability_idle_count.values()),
             "timestamp": int(time.time() * 1000),
+            # Debug info: include all available modules and requested tasks
+            "_debug": {
+                "requested_tasks": list(self.supported_tasks),
+                "discovered_modules": list(self.module_registry.keys()),
+                "active_tasks": list(self.active_tasks),
+                "module_registry_keys": list(self.module_registry.keys()),
+            }
         }
 
         topic = f"{CAPABILITY_TOPIC_PREFIX}/{self.worker_id}"
@@ -245,7 +271,11 @@ class ComputeWorker:
 
         success = self.broadcaster.publish_retained(topic, payload, qos=1)
         if success:
-            logger.info(f"Published worker capabilities to {topic}: {capabilities_msg}")
+            logger.info(f"Published worker capabilities to {topic}")
+            logger.info(f"  - Requested tasks: {list(self.supported_tasks)}")
+            logger.info(f"  - Available modules: {list(self.module_registry.keys())}")
+            logger.info(f"  - Active capabilities: {list(self.active_tasks)}")
+            logger.info(f"  - Idle count: {sum(self.capability_idle_count.values())}")
         else:
             logger.error(f"Failed to publish worker capabilities to {topic}")
 
