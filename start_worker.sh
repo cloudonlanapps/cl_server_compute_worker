@@ -1,39 +1,40 @@
 #!/bin/bash
 
 ################################################################################
-#            Standalone Compute Worker - Start Script
+#                 CL Server - Start Compute Worker
 ################################################################################
 #
-# This script starts a standalone Compute Worker.
+# This script starts a Compute Worker process.
 #
 # Usage:
 #   ./start_worker.sh --worker-id worker-1 --tasks image_resize,image_conversion
 #
 # Environment Variables (Required):
+#   CL_VENV_DIR - Path to directory containing virtual environments
 #   CL_SERVER_DIR - Path to data directory
 #
 # Environment Variables (Optional):
 #   WORKER_ID - Unique worker identifier (default: worker-default)
 #   WORKER_SUPPORTED_TASKS - Comma-separated task types (default: image_resize,image_conversion)
-#   WORKER_POLL_INTERVAL - Queue poll interval in seconds (default: 5)
+#
+# Worker:
+#   - Standalone Compute Worker
 #
 ################################################################################
 
 set -e
 
-# Get script directory
+# Get script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_DIR="$SCRIPT_DIR"
 
-# Color codes
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Source common utilities (local to this service)
+source "$SCRIPT_DIR/common.sh"
 
-# Default configuration
+# Worker configuration
 WORKER_ID="${WORKER_ID:-worker-default}"
 WORKER_SUPPORTED_TASKS="${WORKER_SUPPORTED_TASKS:-image_resize,image_conversion}"
+SERVICE_ENV_NAME="compute_worker"
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -67,30 +68,52 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo -e "${BLUE}Starting Standalone Compute Worker${NC}"
-echo "Worker ID: $WORKER_ID"
-echo "Supported Tasks: $WORKER_SUPPORTED_TASKS"
+echo -e "${BLUE}Starting Compute Worker${NC}"
 echo ""
 
-# Validate CL_SERVER_DIR
-if [ -z "$CL_SERVER_DIR" ]; then
-    echo -e "${RED}[✗] Error: CL_SERVER_DIR environment variable must be set${NC}"
-    echo -e "${YELLOW}    Example: export CL_SERVER_DIR=/path/to/data${NC}"
+################################################################################
+# Validate environment variables
+################################################################################
+
+echo "Validating environment variables..."
+echo ""
+
+if ! validate_venv_dir; then
     exit 1
 fi
 
-if [ ! -w "$CL_SERVER_DIR" ]; then
-    echo -e "${RED}[✗] Error: No write permission for CL_SERVER_DIR: $CL_SERVER_DIR${NC}"
+echo ""
+
+if ! validate_cl_server_dir; then
     exit 1
 fi
 
-echo -e "${GREEN}[✓] CL_SERVER_DIR is set: $CL_SERVER_DIR${NC}"
 echo ""
 
-# Run worker
-echo -e "${BLUE}[*] Starting worker...${NC}"
-export WORKER_ID="$WORKER_ID"
-export WORKER_SUPPORTED_TASKS="$WORKER_SUPPORTED_TASKS"
+# Ensure logs directory exists
+LOGS_DIR=$(ensure_logs_dir)
+if [ $? -ne 0 ]; then
+    echo -e "${RED}[✗] Failed to create logs directory${NC}"
+    exit 1
+fi
 
-cd "$SCRIPT_DIR"
-python -m src.worker --worker-id "$WORKER_ID" --tasks "$WORKER_SUPPORTED_TASKS"
+echo ""
+
+################################################################################
+# Start Compute Worker
+################################################################################
+
+print_header "Starting Compute Worker"
+
+if start_worker "$WORKER_ID" "$WORKER_SUPPORTED_TASKS" "$SERVICE_DIR" "$SERVICE_ENV_NAME"; then
+    # Worker stopped normally
+    echo ""
+    echo -e "${YELLOW}[*] Compute worker stopped${NC}"
+else
+    # Worker failed to start
+    echo ""
+    echo -e "${RED}[✗] Failed to start Compute worker${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
