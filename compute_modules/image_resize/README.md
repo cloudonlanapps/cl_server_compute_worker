@@ -92,7 +92,7 @@ This module is automatically discovered and executed by the worker. You don't ru
 To create a job that uses this module:
 
 ```bash
-curl -X POST http://localhost:8002/api/v1/job/image_resize \
+curl -X POST http://localhost:8001/job/image_resize \
   -F "upload_files=@image.jpg" \
   -F "priority=5"
 ```
