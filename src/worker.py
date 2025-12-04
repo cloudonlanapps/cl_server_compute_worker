@@ -198,7 +198,6 @@ class ComputeWorker:
         self.supported_tasks = supported_tasks or WORKER_SUPPORTED_TASKS
         self.poll_interval = poll_interval
         self.broadcaster = get_broadcaster()
-        self.last_heartbeat_time = time.time()
 
         # Track idle count for each capability (task type)
         self.capability_idle_count = {}
@@ -250,12 +249,18 @@ class ComputeWorker:
         else:
             logger.error(f"Failed to publish worker capabilities to {topic}")
 
-    def _check_and_publish_heartbeat(self):
-        """Publish heartbeat if interval has elapsed."""
-        current_time = time.time()
-        if current_time - self.last_heartbeat_time >= MQTT_HEARTBEAT_INTERVAL:
-            self._publish_worker_capabilities()
-            self.last_heartbeat_time = current_time
+    async def _heartbeat_task(self):
+        """Background task to publish heartbeat periodically."""
+        logger.info(f"Heartbeat task started for {self.worker_id} (interval: {MQTT_HEARTBEAT_INTERVAL}s)")
+        try:
+            while not shutdown_event.is_set():
+                await asyncio.sleep(MQTT_HEARTBEAT_INTERVAL)
+                if not shutdown_event.is_set():
+                    self._publish_worker_capabilities()
+        except asyncio.CancelledError:
+            logger.debug("Heartbeat task cancelled")
+        except Exception as e:
+            logger.error(f"Error in heartbeat task: {e}")
 
     async def run(self):
         """Main worker loop."""
@@ -264,12 +269,12 @@ class ComputeWorker:
         # Publish initial capabilities
         self._publish_worker_capabilities()
 
+        # Start heartbeat task
+        heartbeat_task = asyncio.create_task(self._heartbeat_task())
+
         try:
             while not shutdown_event.is_set():
                 try:
-                    # Check and publish heartbeat if needed
-                    self._check_and_publish_heartbeat()
-
                     processed = await self._process_next_job()
                     if not processed:
                         # No job found, sleep
@@ -282,6 +287,11 @@ class ComputeWorker:
                     await asyncio.sleep(self.poll_interval)
         finally:
             logger.info(f"Worker {self.worker_id} shutting down...")
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
     async def _process_next_job(self) -> bool:
         """Poll DB and process one job if available."""
