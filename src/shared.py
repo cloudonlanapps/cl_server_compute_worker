@@ -31,6 +31,8 @@ BROADCAST_TYPE = os.environ.get("BROADCAST_TYPE", "mqtt")
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 MQTT_TOPIC = os.environ.get("MQTT_TOPIC", "inference/events")
+MQTT_HEARTBEAT_INTERVAL = int(os.environ.get("MQTT_HEARTBEAT_INTERVAL", 30))
+CAPABILITY_TOPIC_PREFIX = os.environ.get("CAPABILITY_TOPIC_PREFIX", "inference/workers")
 
 # Worker configuration
 WORKER_ID = os.environ.get("WORKER_ID", "worker-default")
@@ -127,6 +129,49 @@ class MQTTBroadcaster:
             logger.error(f"Error publishing event: {e}")
             return False
 
+    def set_will(self, topic: str, payload: str, qos: int = 1, retain: bool = True) -> bool:
+        """Set MQTT Last Will and Testament message.
+
+        Called before connect() to configure LWT.
+
+        Args:
+            topic: Topic for LWT message
+            payload: Payload for LWT message
+            qos: QoS level (0, 1, 2)
+            retain: Whether to retain the message
+
+        Returns:
+            True if successful
+        """
+        if not self.client:
+            return False
+        try:
+            self.client.will_set(topic, payload, qos=qos, retain=retain)
+            return True
+        except Exception as e:
+            logger.error(f"Error setting LWT: {e}")
+            return False
+
+    def publish_retained(self, topic: str, payload: str, qos: int = 1) -> bool:
+        """Publish a retained MQTT message.
+
+        Args:
+            topic: Topic to publish to
+            payload: Message payload (JSON string)
+            qos: QoS level (0, 1, 2)
+
+        Returns:
+            True if successful
+        """
+        if not self.connected or not self.client:
+            return False
+        try:
+            result = self.client.publish(topic, payload, qos=qos, retain=True)
+            return result.rc == mqtt.MQTT_ERR_SUCCESS
+        except Exception as e:
+            logger.error(f"Error publishing retained message: {e}")
+            return False
+
     def _on_connect(self, client, userdata, flags, rc):
         self.connected = (rc == 0)
 
@@ -138,6 +183,10 @@ class NoOpBroadcaster:
     def disconnect(self):
         pass
     def publish_event(self, event_type: str, job_id: str, data: dict) -> bool:
+        return True
+    def set_will(self, topic: str, payload: str, qos: int = 1, retain: bool = True) -> bool:
+        return True
+    def publish_retained(self, topic: str, payload: str, qos: int = 1) -> bool:
         return True
 
 

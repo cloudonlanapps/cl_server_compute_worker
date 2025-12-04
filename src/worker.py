@@ -14,10 +14,34 @@ from sqlalchemy.orm import sessionmaker
 # Import from local shared module
 # Support both package imports and direct script imports
 try:
-    from .shared import DATABASE_URL, WORKER_ID, WORKER_SUPPORTED_TASKS, WORKER_POLL_INTERVAL, LOG_LEVEL, Base, Job
+    from .shared import (
+        DATABASE_URL,
+        WORKER_ID,
+        WORKER_SUPPORTED_TASKS,
+        WORKER_POLL_INTERVAL,
+        LOG_LEVEL,
+        Base,
+        Job,
+        MQTT_HEARTBEAT_INTERVAL,
+        CAPABILITY_TOPIC_PREFIX,
+        get_broadcaster,
+        shutdown_broadcaster,
+    )
 except ImportError:
     # Fallback for when imported as a module directly (not as a package)
-    from shared import DATABASE_URL, WORKER_ID, WORKER_SUPPORTED_TASKS, WORKER_POLL_INTERVAL, LOG_LEVEL, Base, Job
+    from shared import (
+        DATABASE_URL,
+        WORKER_ID,
+        WORKER_SUPPORTED_TASKS,
+        WORKER_POLL_INTERVAL,
+        LOG_LEVEL,
+        Base,
+        Job,
+        MQTT_HEARTBEAT_INTERVAL,
+        CAPABILITY_TOPIC_PREFIX,
+        get_broadcaster,
+        shutdown_broadcaster,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -173,21 +197,30 @@ class ComputeWorker:
         self.worker_id = worker_id
         self.supported_tasks = supported_tasks or WORKER_SUPPORTED_TASKS
         self.poll_interval = poll_interval
-        
+        self.broadcaster = get_broadcaster()
+        self.last_heartbeat_time = time.time()
+
+        # Track idle count for each capability (task type)
+        self.capability_idle_count = {}
+
         # Discover and setup compute modules
         self.module_registry = discover_compute_modules()
-        
+
         # Filter to only supported tasks
         available_tasks = set(self.module_registry.keys())
         requested_tasks = set(self.supported_tasks)
         self.active_tasks = available_tasks & requested_tasks
-        
+
         if not self.active_tasks:
             logger.warning(f"No matching modules found for tasks: {self.supported_tasks}")
-        
+
         logger.info(f"Initialized worker {self.worker_id}")
         logger.info(f"Active task types: {list(self.active_tasks)}")
-        
+
+        # Initialize idle count to 1 for each task (can process 1 job at a time)
+        for task_type in self.active_tasks:
+            self.capability_idle_count[task_type] = 1
+
         # Ensure venvs exist for active modules
         for task_type in self.active_tasks:
             module_info = self.module_registry[task_type]
@@ -195,13 +228,48 @@ class ComputeWorker:
                 logger.error(f"Failed to setup venv for {task_type}, removing from active tasks")
                 self.active_tasks.remove(task_type)
 
+    def _publish_worker_capabilities(self):
+        """Publish worker capabilities to MQTT with retained message."""
+        if not self.broadcaster.connected:
+            logger.warning("MQTT broadcaster not connected, skipping capability publish")
+            return
+
+        capabilities_msg = {
+            "id": self.worker_id,
+            "capabilities": list(self.active_tasks),
+            "idle_count": sum(self.capability_idle_count.values()),
+            "timestamp": int(time.time() * 1000),
+        }
+
+        topic = f"{CAPABILITY_TOPIC_PREFIX}/{self.worker_id}"
+        payload = json.dumps(capabilities_msg)
+
+        success = self.broadcaster.publish_retained(topic, payload, qos=1)
+        if success:
+            logger.info(f"Published worker capabilities to {topic}: {capabilities_msg}")
+        else:
+            logger.error(f"Failed to publish worker capabilities to {topic}")
+
+    def _check_and_publish_heartbeat(self):
+        """Publish heartbeat if interval has elapsed."""
+        current_time = time.time()
+        if current_time - self.last_heartbeat_time >= MQTT_HEARTBEAT_INTERVAL:
+            self._publish_worker_capabilities()
+            self.last_heartbeat_time = current_time
+
     async def run(self):
         """Main worker loop."""
         logger.info(f"Worker {self.worker_id} starting...")
 
+        # Publish initial capabilities
+        self._publish_worker_capabilities()
+
         try:
             while not shutdown_event.is_set():
                 try:
+                    # Check and publish heartbeat if needed
+                    self._check_and_publish_heartbeat()
+
                     processed = await self._process_next_job()
                     if not processed:
                         # No job found, sleep
@@ -256,7 +324,15 @@ class ComputeWorker:
                 return False
 
             logger.info(f"Claimed job {claimed_job.job_id} ({claimed_job.task_type})")
-            
+
+            # Decrement idle count for this task type
+            task_type = claimed_job.task_type
+            if task_type in self.capability_idle_count:
+                self.capability_idle_count[task_type] = max(0, self.capability_idle_count[task_type] - 1)
+                logger.debug(f"Decremented idle count for {task_type}: {self.capability_idle_count[task_type]}")
+                # Publish updated capabilities
+                self._publish_worker_capabilities()
+
             db.close()
 
             # Spawn subprocess using module-specific python and runner
@@ -266,18 +342,25 @@ class ComputeWorker:
                 "--job-id",
                 claimed_job.job_id
             ]
-            
+
             logger.info(f"Spawning subprocess: {' '.join(cmd)}")
-            
+
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(module_info["module_path"])
             )
-            
+
             stdout, stderr = await process.communicate()
-            
+
+            # Increment idle count when job completes
+            if task_type in self.capability_idle_count:
+                self.capability_idle_count[task_type] = min(1, self.capability_idle_count[task_type] + 1)
+                logger.debug(f"Incremented idle count for {task_type}: {self.capability_idle_count[task_type]}")
+                # Publish updated capabilities
+                self._publish_worker_capabilities()
+
             if process.returncode == 0:
                 logger.info(f"Job {claimed_job.job_id} subprocess finished successfully")
             else:
@@ -313,7 +396,7 @@ class ComputeWorker:
 async def main():
     """Main entry point."""
     import argparse
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--worker-id", default=WORKER_ID)
     parser.add_argument("--tasks", default=None, help="Comma-separated list of tasks")
@@ -324,14 +407,24 @@ async def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     tasks = args.tasks.split(",") if args.tasks else None
+    worker_id = args.worker_id
+
+    # Setup MQTT LWT (Last Will & Testament) before connecting
+    broadcaster = get_broadcaster()
+    lwt_topic = f"{CAPABILITY_TOPIC_PREFIX}/{worker_id}"
+    broadcaster.set_will(lwt_topic, "", qos=1, retain=True)
 
     # Create and run worker
     worker = ComputeWorker(
-        worker_id=args.worker_id,
+        worker_id=worker_id,
         supported_tasks=tasks
     )
 
-    await worker.run()
+    try:
+        await worker.run()
+    finally:
+        # Shutdown broadcaster
+        shutdown_broadcaster()
 
 
 if __name__ == "__main__":
