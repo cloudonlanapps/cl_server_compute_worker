@@ -14,10 +14,14 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 # Import from local shared module
-from .shared import DATABASE_URL, COMPUTE_DIR, LOG_LEVEL, Job, Base, get_broadcaster, shutdown_broadcaster
-
-# Import local task
-from .task import ImageConversionModule
+# Support both package imports and direct script imports
+try:
+    from .shared import DATABASE_URL, COMPUTE_DIR, LOG_LEVEL, Job, Base, get_broadcaster, shutdown_broadcaster
+    from .task import ImageConversionModule
+except ImportError:
+    # Fallback for when imported as a module directly (not as a package)
+    from shared import DATABASE_URL, COMPUTE_DIR, LOG_LEVEL, Job, Base, get_broadcaster, shutdown_broadcaster
+    from task import ImageConversionModule
 
 # Configure logging
 logging.basicConfig(level=LOG_LEVEL)

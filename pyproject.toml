@@ -8,6 +8,21 @@ dependencies = [
     "paho-mqtt>=1.6.0",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[tool.pytest.ini_options]
+# Test configuration
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+testpaths = ["tests"]
+# Exclude compute modules from root tests to avoid import conflicts
+norecursedirs = ["compute_modules"]
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"

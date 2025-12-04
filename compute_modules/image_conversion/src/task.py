@@ -1,12 +1,18 @@
 """Image Conversion compute module - simple Pillow-based implementation."""
 
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from PIL import Image
 
-from .base import ComputeModule
+# Support both package imports and direct script imports
+try:
+    from .base import ComputeModule
+except ImportError:
+    # Fallback for when imported as a module directly (not as a package)
+    from base import ComputeModule
 
 logger = logging.getLogger(__name__)
 

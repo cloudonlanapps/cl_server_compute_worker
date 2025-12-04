@@ -12,7 +12,12 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 # Import from local shared module
-from .shared import DATABASE_URL, WORKER_ID, WORKER_SUPPORTED_TASKS, WORKER_POLL_INTERVAL, LOG_LEVEL, Base, Job
+# Support both package imports and direct script imports
+try:
+    from .shared import DATABASE_URL, WORKER_ID, WORKER_SUPPORTED_TASKS, WORKER_POLL_INTERVAL, LOG_LEVEL, Base, Job
+except ImportError:
+    # Fallback for when imported as a module directly (not as a package)
+    from shared import DATABASE_URL, WORKER_ID, WORKER_SUPPORTED_TASKS, WORKER_POLL_INTERVAL, LOG_LEVEL, Base, Job
 
 logger = logging.getLogger(__name__)
 
