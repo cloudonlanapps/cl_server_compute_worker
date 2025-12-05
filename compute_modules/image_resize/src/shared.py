@@ -21,7 +21,9 @@ CL_SERVER_DIR = os.environ.get("CL_SERVER_DIR")
 if not CL_SERVER_DIR:
     raise RuntimeError("CL_SERVER_DIR environment variable must be set")
 
-DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{CL_SERVER_DIR}/compute.db")
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL", f"sqlite:///{CL_SERVER_DIR}/media_store.db"
+)
 COMPUTE_DIR = Path(CL_SERVER_DIR) / "compute"
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
@@ -35,8 +37,10 @@ MQTT_TOPIC = os.environ.get("MQTT_TOPIC", "inference/events")
 # Database Models
 # ============================================================================
 
+
 class Base(DeclarativeBase):
     """Base class for SQLAlchemy models."""
+
     pass
 
 
@@ -74,6 +78,7 @@ class Job(Base):
 # ============================================================================
 # Broadcaster
 # ============================================================================
+
 
 class MQTTBroadcaster:
     """MQTT event broadcaster."""
@@ -120,35 +125,40 @@ class MQTTBroadcaster:
             return False
 
     def _on_connect(self, client, userdata, flags, rc):
-        self.connected = (rc == 0)
+        self.connected = rc == 0
 
 
 class NoOpBroadcaster:
     """No-operation broadcaster."""
+
     def connect(self) -> bool:
         return True
+
     def disconnect(self):
         pass
+
     def publish_event(self, event_type: str, job_id: str, data: dict) -> bool:
         return True
 
 
 _broadcaster: Optional[object] = None
 
+
 def get_broadcaster():
     """Get or create global broadcaster instance."""
     global _broadcaster
     if _broadcaster is not None:
         return _broadcaster
-    
+
     if BROADCAST_TYPE == "mqtt":
         _broadcaster = MQTTBroadcaster(MQTT_BROKER, MQTT_PORT, MQTT_TOPIC)
         _broadcaster.connect()
     else:
         _broadcaster = NoOpBroadcaster()
         _broadcaster.connect()
-    
+
     return _broadcaster
+
 
 def shutdown_broadcaster():
     """Shutdown broadcaster."""

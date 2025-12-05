@@ -327,10 +327,10 @@ class ComputeWorker:
         """Poll DB and process one job if available."""
         db = SessionLocal()
         try:
-            # Find a PENDING job that matches our active tasks
+            # Find a QUEUED job that matches our active tasks
             jobs = (
                 db.query(Job)
-                .filter(Job.status == "pending")
+                .filter(Job.status == "queued")
                 .filter(Job.task_type.in_(list(self.active_tasks)))
                 .order_by(Job.created_at.asc())
                 .limit(5)
@@ -343,7 +343,7 @@ class ComputeWorker:
             # Try to claim one
             claimed_job = None
             for job in jobs:
-                current_job = db.query(Job).filter_by(job_id=job.job_id, status="pending").first()
+                current_job = db.query(Job).filter_by(job_id=job.job_id, status="queued").first()
                 if current_job:
                     current_job.status = "claimed"
                     try:

@@ -16,11 +16,27 @@ from sqlalchemy.orm import sessionmaker
 # Import from local shared module
 # Support both package imports and direct script imports
 try:
-    from .shared import DATABASE_URL, COMPUTE_DIR, LOG_LEVEL, Job, Base, get_broadcaster, shutdown_broadcaster
+    from .shared import (
+        DATABASE_URL,
+        COMPUTE_DIR,
+        LOG_LEVEL,
+        Job,
+        Base,
+        get_broadcaster,
+        shutdown_broadcaster,
+    )
     from .task import ImageResizeModule
 except ImportError:
     # Fallback for when imported as a module directly (not as a package)
-    from shared import DATABASE_URL, COMPUTE_DIR, LOG_LEVEL, Job, Base, get_broadcaster, shutdown_broadcaster
+    from shared import (
+        DATABASE_URL,
+        COMPUTE_DIR,
+        LOG_LEVEL,
+        Job,
+        Base,
+        get_broadcaster,
+        shutdown_broadcaster,
+    )
     from task import ImageResizeModule
 
 # Configure logging
@@ -54,13 +70,18 @@ def main():
     # Setup database
     engine = create_engine(
         DATABASE_URL,
-        connect_args={"check_same_thread": False},  # Needed for SQLite with multiple processes
-        echo=False
+        connect_args={
+            "check_same_thread": False
+        },  # Needed for SQLite with multiple processes
+        echo=False,
     )
 
     # Register WAL event listener for every connection
     if "sqlite" in DATABASE_URL.lower():
         event.listen(engine, "connect", _enable_wal_mode)
+
+    # Create tables if they don't exist
+    Base.metadata.create_all(engine)
 
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
@@ -79,7 +100,7 @@ def main():
         job.status = "processing"
         job.started_at = int(time.time() * 1000)
         db.commit()
-        
+
         broadcaster.publish_event("started", job_id, {"status": "processing"})
 
         # 3. Prepare Inputs
@@ -87,7 +108,7 @@ def main():
         input_files_info = json.loads(job.input_files)
         input_files = []
         for file_info in input_files_info:
-            file_path = Path(COMPUTE_DIR) / file_info.get("path")
+            file_path = COMPUTE_DIR / file_info.get("path")
             if file_path.exists() or file_path.is_symlink():
                 input_files.append(file_path)
             else:
@@ -114,7 +135,9 @@ def main():
 
         # 6. Execute (Async wrapper)
         logger.info("Executing module...")
-        result = _execute_async_module(module, job_id, input_files, metadata, progress_callback)
+        result = _execute_async_module(
+            module, job_id, input_files, metadata, progress_callback
+        )
 
         # 7. Handle Result
         status = result.get("status", "error")
@@ -130,7 +153,9 @@ def main():
             job.task_output = json.dumps(task_output)
             job.completed_at = int(time.time() * 1000)
             db.commit()
-            broadcaster.publish_event("completed", job_id, {"output_files": output_files})
+            broadcaster.publish_event(
+                "completed", job_id, {"output_files": output_files}
+            )
         else:
             logger.error(f"Job failed: {error}")
             job.status = "error"
@@ -157,6 +182,7 @@ def main():
         db.close()
         shutdown_broadcaster()
 
+
 def _execute_async_module(module, job_id, input_files, metadata, progress_callback):
     """Execute async compute module in sync context."""
     loop = asyncio.new_event_loop()
@@ -168,6 +194,7 @@ def _execute_async_module(module, job_id, input_files, metadata, progress_callba
         return result
     finally:
         loop.close()
+
 
 if __name__ == "__main__":
     main()

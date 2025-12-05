@@ -94,6 +94,12 @@ class ImageResizeModule(ComputeModule):
             if progress_callback:
                 progress_callback(70)
 
+            # Convert to RGB if needed (JPEG doesn't support alpha)
+            if image.mode in ('RGBA', 'LA', 'P'):
+                rgb_image = Image.new('RGB', image.size, (255, 255, 255))
+                rgb_image.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+                image = rgb_image
+
             # Save output file
             output_dir = input_file.parent.parent / "output"
             output_dir.mkdir(parents=True, exist_ok=True)
