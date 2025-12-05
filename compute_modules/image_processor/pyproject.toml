@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "image_conversion"
+name = "image_processor"
 version = "0.1.0"
-description = "Image Conversion Compute Module"
+description = "Image Processor Compute Module"
 requires-python = ">=3.9"
 dependencies = [
     "pillow>=10.0.0",
@@ -24,3 +24,6 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.compute_module]
+supported_tasks = ["image_resize", "image_conversion"]

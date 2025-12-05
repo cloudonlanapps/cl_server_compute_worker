@@ -11,37 +11,28 @@ import json
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-# Import from local shared module
-# Support both package imports and direct script imports
+# Import from cl_server_shared
 try:
-    from .shared import (
-        DATABASE_URL,
+    from cl_server_shared import (
+        WORKER_DATABASE_URL as DATABASE_URL,
         WORKER_ID,
         WORKER_SUPPORTED_TASKS,
         WORKER_POLL_INTERVAL,
         LOG_LEVEL,
-        Base,
         Job,
         MQTT_HEARTBEAT_INTERVAL,
         CAPABILITY_TOPIC_PREFIX,
-        get_broadcaster,
-        shutdown_broadcaster,
+        BROADCAST_TYPE,
+        MQTT_BROKER,
+        MQTT_PORT,
+        MQTT_TOPIC,
     )
+    from cl_server_shared.database import Base
+    from cl_server_shared.mqtt import get_broadcaster, shutdown_broadcaster
 except ImportError:
-    # Fallback for when imported as a module directly (not as a package)
-    from shared import (
-        DATABASE_URL,
-        WORKER_ID,
-        WORKER_SUPPORTED_TASKS,
-        WORKER_POLL_INTERVAL,
-        LOG_LEVEL,
-        Base,
-        Job,
-        MQTT_HEARTBEAT_INTERVAL,
-        CAPABILITY_TOPIC_PREFIX,
-        get_broadcaster,
-        shutdown_broadcaster,
-    )
+    # Fallback if package not installed (e.g. during development)
+    logger.warning("cl_server_shared not found, using local fallbacks (this should not happen in production)")
+    raise
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +88,7 @@ def discover_compute_modules() -> Dict[str, Dict]:
         Dict mapping task_type to module info:
         {
             "image_resize": {
-                "module_name": "image_resize",
+                "module_name": "image_processor",
                 "module_path": Path(...),
                 "runner_path": Path(...),
                 "venv_path": Path(...),
@@ -113,6 +104,8 @@ def discover_compute_modules() -> Dict[str, Dict]:
     logger.info(f"Scanning for compute modules in: {modules_dir}")
     registry = {}
 
+    import tomllib  # For parsing pyproject.toml (Python 3.11+)
+
     for module_dir in modules_dir.iterdir():
         if not module_dir.is_dir() or module_dir.name.startswith('.'):
             continue
@@ -120,26 +113,36 @@ def discover_compute_modules() -> Dict[str, Dict]:
         # Check for required files in src/ subdirectory
         src_dir = module_dir / "src"
         runner_path = src_dir / "runner.py"
-        task_path = src_dir / "task.py"
         pyproject_path = module_dir / "pyproject.toml"
 
         # Log what we're checking
         logger.debug(f"Checking module: {module_dir.name}")
         logger.debug(f"  - runner.py exists at {runner_path}: {runner_path.exists()}")
-        logger.debug(f"  - task.py exists at {task_path}: {task_path.exists()}")
         logger.debug(f"  - pyproject.toml exists at {pyproject_path}: {pyproject_path.exists()}")
 
-        if not all([runner_path.exists(), task_path.exists(), pyproject_path.exists()]):
+        if not all([runner_path.exists(), pyproject_path.exists()]):
             logger.warning(f"Skipping incomplete module: {module_dir.name} (missing required files in src/)")
             continue
 
-        # Use folder name as task type (e.g., "image_resize", "image_conversion")
-        task_type = module_dir.name
+        # Parse pyproject.toml for supported tasks
+        try:
+            with open(pyproject_path, "rb") as f:
+                pyproject_data = tomllib.load(f)
+            
+            supported_tasks = pyproject_data.get("tool", {}).get("compute_module", {}).get("supported_tasks", [])
+            
+            if not supported_tasks:
+                logger.warning(f"Skipping module {module_dir.name}: No supported_tasks defined in [tool.compute_module]")
+                continue
+                
+        except Exception as e:
+            logger.error(f"Failed to parse pyproject.toml for {module_dir.name}: {e}")
+            continue
 
         venv_path = module_dir / ".venv"
         python_path = venv_path / "bin" / "python"
 
-        registry[task_type] = {
+        module_info = {
             "module_name": module_dir.name,
             "module_path": module_dir,
             "runner_path": runner_path,
@@ -147,9 +150,19 @@ def discover_compute_modules() -> Dict[str, Dict]:
             "python_path": python_path
         }
 
-        logger.info(f"✓ Discovered module: {module_dir.name} -> {task_type}")
+        # Register module for each supported task
+        for task_type in supported_tasks:
+            if task_type in registry:
+                # Conflict detected!
+                existing_module = registry[task_type]["module_name"]
+                error_msg = f"Conflict detected! Task '{task_type}' is already registered by module '{existing_module}'."
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            registry[task_type] = module_info
+            logger.info(f"✓ Discovered module: {module_dir.name} -> {task_type}")
 
-    logger.info(f"Total modules discovered: {len(registry)}")
+    logger.info(f"Total tasks discovered: {len(registry)}")
     logger.info(f"Available task types: {list(registry.keys())}")
 
     return registry
@@ -166,8 +179,23 @@ def ensure_module_venv(module_info: Dict) -> bool:
     venv_path = module_info["venv_path"]
     python_path = module_info["python_path"]
     
+    # Path to cl_server_shared (relative to module directory)
+    # module_dir is cl_server_compute_worker/compute_modules/<module>
+    # cl_server_shared is cl_server_shared/
+    # So we need to go up 3 levels: ../../../cl_server_shared
+    shared_pkg_path = Path(__file__).parent.parent.parent / "cl_server_shared"
+    
     if python_path.exists():
         logger.info(f"Virtual environment exists for {module_info['module_name']}")
+        # Ensure cl_server_shared is installed even if venv exists
+        try:
+             subprocess.run(
+                [str(python_path), "-m", "pip", "install", "-q", "-e", str(shared_pkg_path)],
+                check=True,
+                cwd=str(module_path)
+            )
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to update cl_server_shared for {module_info['module_name']}: {e}")
         return True
     
     logger.info(f"Creating virtual environment for {module_info['module_name']}...")
@@ -186,6 +214,17 @@ def ensure_module_venv(module_info: Dict) -> bool:
             check=True,
             cwd=str(module_path)
         )
+
+        # Install cl_server_shared in editable mode
+        if shared_pkg_path.exists():
+             subprocess.run(
+                [str(python_path), "-m", "pip", "install", "-q", "-e", str(shared_pkg_path)],
+                check=True,
+                cwd=str(module_path)
+            )
+        else:
+            logger.error(f"cl_server_shared not found at {shared_pkg_path}")
+            return False
         
         logger.info(f"Virtual environment created for {module_info['module_name']}")
         return True
@@ -208,7 +247,12 @@ class ComputeWorker:
         self.worker_id = worker_id
         self.supported_tasks = supported_tasks or WORKER_SUPPORTED_TASKS
         self.poll_interval = poll_interval
-        self.broadcaster = get_broadcaster()
+        self.broadcaster = get_broadcaster(
+            broadcast_type=BROADCAST_TYPE,
+            broker=MQTT_BROKER,
+            port=MQTT_PORT,
+            topic=MQTT_TOPIC
+        )
 
         # Track idle count for each capability (task type)
         self.capability_idle_count = {}
@@ -450,7 +494,12 @@ async def main():
     worker_id = args.worker_id
 
     # Setup MQTT LWT (Last Will & Testament) before connecting
-    broadcaster = get_broadcaster()
+    broadcaster = get_broadcaster(
+        broadcast_type=BROADCAST_TYPE,
+        broker=MQTT_BROKER,
+        port=MQTT_PORT,
+        topic=MQTT_TOPIC
+    )
     lwt_topic = f"{CAPABILITY_TOPIC_PREFIX}/{worker_id}"
     broadcaster.set_will(lwt_topic, "", qos=1, retain=True)
 

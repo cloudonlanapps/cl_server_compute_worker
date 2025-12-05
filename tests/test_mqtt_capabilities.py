@@ -180,7 +180,7 @@ class TestBroadcasterMethods:
 
     def test_set_will_method_exists(self):
         """Test that broadcaster has set_will method."""
-        from src.shared import MQTTBroadcaster
+        from cl_server_shared.mqtt import MQTTBroadcaster
 
         broadcaster = MQTTBroadcaster("localhost", 1883, "test/topic")
         assert hasattr(broadcaster, "set_will")
@@ -188,7 +188,7 @@ class TestBroadcasterMethods:
 
     def test_publish_retained_method_exists(self):
         """Test that broadcaster has publish_retained method."""
-        from src.shared import MQTTBroadcaster
+        from cl_server_shared.mqtt import MQTTBroadcaster
 
         broadcaster = MQTTBroadcaster("localhost", 1883, "test/topic")
         assert hasattr(broadcaster, "publish_retained")
@@ -196,7 +196,7 @@ class TestBroadcasterMethods:
 
     def test_noop_broadcaster_has_methods(self):
         """Test that NoOp broadcaster implements required methods."""
-        from src.shared import NoOpBroadcaster
+        from cl_server_shared.mqtt import NoOpBroadcaster
 
         broadcaster = NoOpBroadcaster()
         assert hasattr(broadcaster, "set_will")
