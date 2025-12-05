@@ -11,7 +11,7 @@ from PIL import Image
 
 # Support both package imports and direct script imports
 try:
-    from cl_server_shared import ComputeModule, run_compute_job
+    from cl_server_shared import ComputeModule, run_compute_job, ComputeJobParams, ImageResizeParams, ImageConversionParams
 except ImportError:
     # Fallback for when imported as a module directly (not as a package)
     # This might fail if cl_server_shared is not in path, but that's expected
@@ -31,60 +31,50 @@ class ImageProcessorModule(ComputeModule):
         self,
         job_id: str,
         task_type: str,
-        input_files: List[Path],
-        metadata: Dict[str, Any],
+        params: ComputeJobParams,
         progress_callback: Optional[Callable[[int], None]] = None,
     ) -> Dict[str, Any]:
         """Process image job based on task type."""
         logger.info(f"Processing job {job_id} (type: {task_type})")
         
         if task_type == "image_resize":
-            return await self._process_resize(job_id, input_files, metadata, progress_callback)
+            if not isinstance(params, ImageResizeParams):
+                return {"status": "error", "error": "Invalid params for image_resize"}
+            return await self._process_resize(job_id, params, progress_callback)
         elif task_type == "image_conversion":
-            return await self._process_conversion(job_id, input_files, metadata, progress_callback)
+            if not isinstance(params, ImageConversionParams):
+                return {"status": "error", "error": "Invalid params for image_conversion"}
+            return await self._process_conversion(job_id, params, progress_callback)
         else:
             return {"status": "error", "error": f"Unsupported task type: {task_type}"}
 
     async def _process_resize(
         self,
         job_id: str,
-        input_files: List[Path],
-        metadata: Dict[str, Any],
+        params: ImageResizeParams,
         progress_callback: Optional[Callable[[int], None]] = None,
     ) -> Dict[str, Any]:
         """Resize images."""
         try:
-            width = metadata.get("width")
-            height = metadata.get("height")
-            
-            if not width or not height:
-                return {"status": "error", "error": "Missing width or height in metadata"}
+            total_files = len(params.input_paths)
 
-            output_files = []
-            total_files = len(input_files)
-
-            for i, input_path in enumerate(input_files):
+            for i, (input_path_str, output_path_str) in enumerate(zip(params.input_paths, params.output_paths)):
+                input_path = Path(input_path_str)
+                output_path = Path(output_path_str)
+                
                 try:
+                    # Ensure output directory exists
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+
                     with Image.open(input_path) as img:
                         # Resize
-                        resized_img = img.resize((width, height))
+                        resized_img = img.resize((params.width, params.height))
                         
                         # Save
-                        output_filename = f"resized_{input_path.name}"
-                        output_path = input_path.parent / output_filename
                         resized_img.save(output_path)
                         
-                        output_files.append({
-                            "file_id": output_filename,
-                            "metadata": {
-                                "original_path": str(input_path),
-                                "width": width,
-                                "height": height
-                            }
-                        })
                 except Exception as e:
                     logger.error(f"Failed to resize {input_path}: {e}")
-                    # Continue with other files or fail? For now, let's continue but log error
                 
                 if progress_callback:
                     progress_callback(int((i + 1) / total_files * 100))
@@ -94,8 +84,7 @@ class ImageProcessorModule(ComputeModule):
 
             return {
                 "status": "ok",
-                "output_files": output_files,
-                "task_output": {"processed_count": len(output_files)}
+                "task_output": {"processed_count": total_files}
             }
 
         except Exception as e:
@@ -105,36 +94,30 @@ class ImageProcessorModule(ComputeModule):
     async def _process_conversion(
         self,
         job_id: str,
-        input_files: List[Path],
-        metadata: Dict[str, Any],
+        params: ImageConversionParams,
         progress_callback: Optional[Callable[[int], None]] = None,
     ) -> Dict[str, Any]:
         """Convert images to target format."""
         try:
-            target_format = metadata.get("format", "JPEG").upper()
-            
-            output_files = []
-            total_files = len(input_files)
+            target_format = params.format.upper()
+            total_files = len(params.input_paths)
 
-            for i, input_path in enumerate(input_files):
+            for i, (input_path_str, output_path_str) in enumerate(zip(params.input_paths, params.output_paths)):
+                input_path = Path(input_path_str)
+                output_path = Path(output_path_str)
+
                 try:
+                    # Ensure output directory exists
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+
                     with Image.open(input_path) as img:
                         # Convert to RGB if saving as JPEG
                         if target_format == "JPEG" and img.mode in ("RGBA", "P"):
                             img = img.convert("RGB")
                         
                         # Save
-                        output_filename = f"converted_{input_path.stem}.{target_format.lower()}"
-                        output_path = input_path.parent / output_filename
-                        img.save(output_path, format=target_format)
+                        img.save(output_path, format=target_format, quality=params.quality)
                         
-                        output_files.append({
-                            "file_id": output_filename,
-                            "metadata": {
-                                "original_path": str(input_path),
-                                "format": target_format
-                            }
-                        })
                 except Exception as e:
                     logger.error(f"Failed to convert {input_path}: {e}")
                 
@@ -146,8 +129,7 @@ class ImageProcessorModule(ComputeModule):
 
             return {
                 "status": "ok",
-                "output_files": output_files,
-                "task_output": {"processed_count": len(output_files)}
+                "task_output": {"processed_count": total_files}
             }
 
         except Exception as e:

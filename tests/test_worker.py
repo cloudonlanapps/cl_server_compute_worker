@@ -85,6 +85,7 @@ def test_ensure_module_venv_exists(tmp_path):
         assert result is True
 
 
+
 def test_worker_initialization():
     """Test worker initialization."""
     from src.worker import ComputeWorker
@@ -97,6 +98,7 @@ def test_worker_initialization():
     
     assert worker.worker_id == "test-worker"
     assert "image_resize" in worker.supported_tasks
+
 
 
 # Add more worker tests here
