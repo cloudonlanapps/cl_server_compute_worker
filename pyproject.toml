@@ -6,6 +6,9 @@ requires-python = ">=3.9"
 dependencies = [
     "sqlalchemy>=2.0.0",
     "paho-mqtt>=1.6.0",
+    "cl-server-shared @ git+https://github.com/cloudonlanapps/cl_server_shared.git",
+    "cl-media-tools[compute] @ git+https://github.com/cloudonlanapps/cl_media_tools.git",
+    "Pillow>=9.0.0",
 ]
 
 [project.optional-dependencies]
