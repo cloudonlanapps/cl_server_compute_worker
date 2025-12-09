@@ -300,3 +300,49 @@ client.on_message = on_message
 client.connect("localhost", 1883, 60)
 client.loop_forever()
 ```
+
+## MQTT Maintenance
+
+### Cleaning Up Retained Messages
+
+Retained MQTT messages persist until explicitly cleared. Use the provided cleanup script to remove stale messages:
+
+**Clean up test messages:**
+```bash
+python cleanup_mqtt.py "test/retained/#"
+```
+
+**Clean up stale worker capabilities:**
+```bash
+python cleanup_mqtt.py "inference/workers/#"
+```
+
+**Clean up all messages matching a pattern:**
+```bash
+python cleanup_mqtt.py "your/topic/pattern/#"
+```
+
+**Script usage:**
+```bash
+python cleanup_mqtt.py <topic_pattern> [broker] [port]
+
+# Examples:
+python cleanup_mqtt.py "test/#"                    # Clean all test topics
+python cleanup_mqtt.py "test/#" mqtt.example.com   # Remote broker
+python cleanup_mqtt.py "test/#" localhost 1883     # Explicit broker:port
+```
+
+**Manual cleanup (using mosquitto_pub):**
+```bash
+# Clear a specific retained message
+mosquitto_pub -h localhost -t "inference/workers/worker-1" -n -r
+
+# The -n flag sends a null (empty) message
+# The -r flag makes it retained (which clears the previous retained message)
+```
+
+**Finding retained messages:**
+```bash
+# Subscribe to all topics and show only retained messages
+mosquitto_sub -h localhost -t '#' -v | grep -E "^\w+/\w+"
+```

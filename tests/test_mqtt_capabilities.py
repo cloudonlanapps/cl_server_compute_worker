@@ -167,16 +167,26 @@ class TestBroadcasterMethods:
         from cl_server_shared.mqtt import MQTTBroadcaster
 
         broadcaster = MQTTBroadcaster("localhost", 1883, "test/topic")
-        assert hasattr(broadcaster, "set_will")
-        assert callable(broadcaster.set_will)
+        try:
+            assert hasattr(broadcaster, "set_will")
+            assert callable(broadcaster.set_will)
+        finally:
+            # Disconnect to prevent connection leaks
+            if hasattr(broadcaster, 'disconnect'):
+                broadcaster.disconnect()
 
     def test_publish_retained_method_exists(self):
         """Test that broadcaster has publish_retained method."""
         from cl_server_shared.mqtt import MQTTBroadcaster
 
         broadcaster = MQTTBroadcaster("localhost", 1883, "test/topic")
-        assert hasattr(broadcaster, "publish_retained")
-        assert callable(broadcaster.publish_retained)
+        try:
+            assert hasattr(broadcaster, "publish_retained")
+            assert callable(broadcaster.publish_retained)
+        finally:
+            # Disconnect to prevent connection leaks
+            if hasattr(broadcaster, 'disconnect'):
+                broadcaster.disconnect()
 
     def test_noop_broadcaster_has_methods(self):
         """Test that NoOp broadcaster implements required methods."""
@@ -198,12 +208,16 @@ class TestBroadcasterMethods:
         from cl_server_shared.mqtt import MQTTBroadcaster
 
         broadcaster = MQTTBroadcaster("localhost", 1883, "test/topic")
+        try:
+            # Skip test if clear_retained not yet implemented in cl_server_shared
+            if not hasattr(broadcaster, "clear_retained"):
+                pytest.skip("clear_retained method not yet implemented in cl_server_shared")
 
-        # Skip test if clear_retained not yet implemented in cl_server_shared
-        if not hasattr(broadcaster, "clear_retained"):
-            pytest.skip("clear_retained method not yet implemented in cl_server_shared")
-
-        assert callable(broadcaster.clear_retained)
+            assert callable(broadcaster.clear_retained)
+        finally:
+            # Disconnect to prevent connection leaks
+            if hasattr(broadcaster, 'disconnect'):
+                broadcaster.disconnect()
 
 
 class TestWorkerShutdown:
