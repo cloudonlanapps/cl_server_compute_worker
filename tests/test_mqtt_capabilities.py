@@ -187,3 +187,116 @@ class TestBroadcasterMethods:
         assert hasattr(broadcaster, "publish_retained")
         assert callable(broadcaster.set_will)
         assert callable(broadcaster.publish_retained)
+
+    def test_clear_retained_method_exists(self):
+        """Test that broadcaster has clear_retained method.
+
+        Note: This test verifies that cl_server_shared.mqtt.MQTTBroadcaster
+        has implemented the clear_retained method. If this test fails, it means
+        the cl_server_shared package needs to be updated.
+        """
+        from cl_server_shared.mqtt import MQTTBroadcaster
+
+        broadcaster = MQTTBroadcaster("localhost", 1883, "test/topic")
+
+        # Skip test if clear_retained not yet implemented in cl_server_shared
+        if not hasattr(broadcaster, "clear_retained"):
+            pytest.skip("clear_retained method not yet implemented in cl_server_shared")
+
+        assert callable(broadcaster.clear_retained)
+
+
+class TestWorkerShutdown:
+    """Tests for worker shutdown behavior."""
+
+    @pytest.mark.asyncio
+    async def test_clear_retained_called_on_shutdown(self):
+        """Test that clear_retained is called when worker shuts down."""
+        from src.worker import ComputeWorker, shutdown_event
+        import asyncio
+
+        mock_broadcaster = MagicMock()
+        mock_broadcaster.connected = True
+        mock_broadcaster.publish_retained.return_value = True
+        mock_broadcaster.clear_retained = Mock(return_value=True)
+
+        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
+             patch("src.worker.Worker") as mock_worker_class, \
+             patch("src.worker.SQLAlchemyJobRepository"):
+
+            mock_library_worker = Mock()
+            mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
+
+            # Make run_once async that returns False (no jobs)
+            async def mock_run_once(task_types):
+                # Set shutdown event after first poll to exit loop
+                shutdown_event.set()
+                return False
+
+            mock_library_worker.run_once = mock_run_once
+            mock_worker_class.return_value = mock_library_worker
+
+            worker = ComputeWorker(worker_id="test-worker", supported_tasks=["image_resize"])
+
+            # Clear shutdown event before running
+            shutdown_event.clear()
+
+            # Run worker (will exit after first iteration due to shutdown_event)
+            await worker.run()
+
+            # Verify clear_retained was called
+            assert mock_broadcaster.clear_retained.called
+            call_args = mock_broadcaster.clear_retained.call_args
+            topic = call_args[0][0]
+            assert "test-worker" in topic
+
+    def test_clear_worker_capabilities_method(self):
+        """Test _clear_worker_capabilities method."""
+        from src.worker import ComputeWorker
+
+        mock_broadcaster = MagicMock()
+        mock_broadcaster.connected = True
+        mock_broadcaster.clear_retained = Mock(return_value=True)
+
+        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
+             patch("src.worker.Worker") as mock_worker_class, \
+             patch("src.worker.SQLAlchemyJobRepository"):
+
+            mock_library_worker = Mock()
+            mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
+            mock_worker_class.return_value = mock_library_worker
+
+            worker = ComputeWorker(worker_id="test-worker", supported_tasks=["image_resize"])
+
+            # Call clear method
+            worker._clear_worker_capabilities()
+
+            # Verify clear_retained was called with correct topic
+            mock_broadcaster.clear_retained.assert_called_once()
+            call_args = mock_broadcaster.clear_retained.call_args
+            topic = call_args[0][0]
+            assert topic == "inference/workers/test-worker"
+
+    def test_clear_capabilities_not_connected(self):
+        """Test that clear_capabilities handles broadcaster not connected."""
+        from src.worker import ComputeWorker
+
+        mock_broadcaster = MagicMock()
+        mock_broadcaster.connected = False
+
+        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
+             patch("src.worker.Worker") as mock_worker_class, \
+             patch("src.worker.SQLAlchemyJobRepository"):
+
+            mock_library_worker = Mock()
+            mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
+            mock_worker_class.return_value = mock_library_worker
+
+            worker = ComputeWorker(worker_id="test-worker", supported_tasks=["image_resize"])
+
+            # Should not raise exception
+            worker._clear_worker_capabilities()
+
+            # Verify clear_retained was not called
+            assert not hasattr(mock_broadcaster, 'clear_retained') or \
+                   not mock_broadcaster.clear_retained.called

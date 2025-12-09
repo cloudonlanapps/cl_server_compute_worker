@@ -81,7 +81,9 @@ class ComputeWorker:
 
         # Get available task types from library
         available_tasks = set(self.library_worker.get_supported_task_types())
-        requested_tasks = set(self.requested_tasks) if self.requested_tasks else available_tasks
+        requested_tasks = (
+            set(self.requested_tasks) if self.requested_tasks else available_tasks
+        )
 
         # Active tasks are the intersection of requested and available
         self.active_tasks = available_tasks & requested_tasks
@@ -91,7 +93,7 @@ class ComputeWorker:
             broadcast_type=BROADCAST_TYPE,
             broker=MQTT_BROKER,
             port=MQTT_PORT,
-            topic=MQTT_TOPIC
+            topic=MQTT_TOPIC,
         )
 
         # Track idle count for capability publishing
@@ -106,7 +108,9 @@ class ComputeWorker:
 
         if not self.active_tasks:
             if requested_tasks and not available_tasks:
-                logger.error("No plugins found! Check that cl_media_tools is installed with plugins.")
+                logger.error(
+                    "No plugins found! Check that cl_media_tools is installed with plugins."
+                )
             elif requested_tasks and available_tasks:
                 logger.warning(
                     f"No matching plugins found. Requested: {list(requested_tasks)}, "
@@ -118,7 +122,9 @@ class ComputeWorker:
     def _publish_worker_capabilities(self):
         """Publish worker capabilities to MQTT with retained message."""
         if not self.broadcaster.connected:
-            logger.warning("MQTT broadcaster not connected, skipping capability publish")
+            logger.warning(
+                "MQTT broadcaster not connected, skipping capability publish"
+            )
             return
 
         capabilities_msg = {
@@ -138,6 +144,20 @@ class ComputeWorker:
             logger.info(f"  - Idle: {self.is_idle}")
         else:
             logger.error(f"Failed to publish worker capabilities to {topic}")
+
+    def _clear_worker_capabilities(self):
+        """Clear retained worker capabilities from MQTT."""
+        if not self.broadcaster.connected:
+            logger.warning("MQTT broadcaster not connected, skipping capability clear")
+            return
+
+        topic = f"{CAPABILITY_TOPIC_PREFIX}/{self.worker_id}"
+
+        success = self.broadcaster.clear_retained(topic)
+        if success:
+            logger.info(f"Cleared retained worker capabilities from {topic}")
+        else:
+            logger.error(f"Failed to clear retained worker capabilities from {topic}")
 
     async def _heartbeat_task(self):
         """Background task to publish heartbeat periodically."""
@@ -180,11 +200,16 @@ class ComputeWorker:
                     await asyncio.sleep(self.poll_interval)
         finally:
             logger.info(f"Worker {self.worker_id} shutting down...")
+
+            # Cancel heartbeat task first to prevent race conditions
             heartbeat_task.cancel()
             try:
                 await heartbeat_task
             except asyncio.CancelledError:
                 pass
+
+            # Clear retained capability message after heartbeat is stopped
+            self._clear_worker_capabilities()
 
     async def _process_next_job(self) -> bool:
         """Process one job using cl_media_tools Worker.
@@ -239,16 +264,13 @@ async def main():
         broadcast_type=BROADCAST_TYPE,
         broker=MQTT_BROKER,
         port=MQTT_PORT,
-        topic=MQTT_TOPIC
+        topic=MQTT_TOPIC,
     )
     lwt_topic = f"{CAPABILITY_TOPIC_PREFIX}/{worker_id}"
     broadcaster.set_will(lwt_topic, "", qos=1, retain=True)
 
     # Create and run worker
-    worker = ComputeWorker(
-        worker_id=worker_id,
-        supported_tasks=tasks
-    )
+    worker = ComputeWorker(worker_id=worker_id, supported_tasks=tasks)
 
     try:
         await worker.run()

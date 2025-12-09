@@ -26,6 +26,9 @@ testpaths = ["tests"]
 # Exclude compute modules from root tests to avoid import conflicts
 norecursedirs = ["compute_modules"]
 
+[tool.setuptools]
+packages = ["src"]
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"

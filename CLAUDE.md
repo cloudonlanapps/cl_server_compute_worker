@@ -97,7 +97,21 @@ The worker publishes retained capability messages to MQTT topic `{CAPABILITY_TOP
 }
 ```
 
-Last Will & Testament (LWT) is configured to clear the capability message when worker disconnects.
+#### Retained Message Lifecycle
+
+Retained messages are persistent in MQTT and do not have timeouts. The worker manages their lifecycle explicitly:
+
+1. **On Startup**: Worker publishes retained capability message to announce availability
+2. **During Operation**: Heartbeat task periodically refreshes the message with updated idle/busy status
+3. **On Shutdown**: Worker explicitly clears the retained message to prevent stale worker registrations
+
+**Shutdown Sequence**:
+1. Cancel heartbeat task to stop publishing new capabilities
+2. Wait for heartbeat task to complete
+3. Call `clear_retained()` to remove the retained capability message
+4. Shutdown MQTT broadcaster connection
+
+**Abnormal Disconnect**: Last Will & Testament (LWT) is configured to send an empty retained message when the broker detects an unexpected disconnect, ensuring the capability is cleared even if the worker crashes.
 
 ## Configuration
 

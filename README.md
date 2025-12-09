@@ -27,6 +27,8 @@ worker/
 The worker requires:
 - `sqlalchemy>=2.0.0` - Database access with WAL support
 - `paho-mqtt>=1.6.0` - Event broadcasting
+- `cl-server-shared` - Shared configuration, models, and MQTT utilities
+- `cl-media-tools[compute]` - Job processing engine and task plugins
 
 ## Database Configuration
 
@@ -90,6 +92,142 @@ The database creates three files:
 
 These are automatically managed by SQLite and should **not be deleted** while the database is in use.
 
+## MQTT Configuration
+
+The worker uses MQTT for real-time event broadcasting and worker capability announcements.
+
+### MQTT Broker Configuration
+
+**Environment Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MQTT_BROKER` | `localhost` | MQTT broker hostname or IP address |
+| `MQTT_PORT` | `1883` | MQTT broker port |
+| `MQTT_TOPIC` | `inference/events` | Base topic for job progress events |
+| `BROADCAST_TYPE` | `mqtt` | Broadcaster type (`mqtt` or `noop` for testing) |
+
+**Example Configuration:**
+
+```bash
+# Connect to external MQTT broker
+export MQTT_BROKER=mqtt.example.com
+export MQTT_PORT=1883
+
+# Or use local broker (default)
+export MQTT_BROKER=localhost
+export MQTT_PORT=1883
+
+# Disable MQTT broadcasting (for testing)
+export BROADCAST_TYPE=noop
+```
+
+### MQTT Topics and Message Formats
+
+#### 1. Worker Capability Topic
+
+**Topic Pattern:** `inference/workers/{worker_id}`
+
+**Purpose:** Announces worker availability and capabilities with retained messages
+
+**Message Format:**
+```json
+{
+  "id": "worker-1",
+  "capabilities": ["image_resize", "image_conversion"],
+  "idle_count": 1,
+  "timestamp": 1702123456789
+}
+```
+
+**Fields:**
+- `id` (string): Unique worker identifier
+- `capabilities` (array): List of task types this worker can handle
+- `idle_count` (integer): 1 when idle, 0 when busy processing a job
+- `timestamp` (integer): Unix timestamp in milliseconds
+
+**Behavior:**
+- Published as **retained message** when worker starts
+- Updated periodically via heartbeat (every 30 seconds by default)
+- **Cleared on graceful shutdown** to prevent stale worker registrations
+- Cleared via Last Will & Testament (LWT) on unexpected disconnect
+
+**Environment Variables:**
+- `CAPABILITY_TOPIC_PREFIX`: Override base topic (default: `inference/workers`)
+- `MQTT_HEARTBEAT_INTERVAL`: Heartbeat interval in seconds (default: `30`)
+
+#### 2. Job Progress Events Topic
+
+**Topic Pattern:** `inference/events`
+
+**Purpose:** Real-time job progress updates during execution
+
+**Message Format:**
+```json
+{
+  "event_type": "processing",
+  "job_id": "job-abc-123",
+  "data": {
+    "progress": 50.0
+  },
+  "timestamp": 1702123456789
+}
+```
+
+**Event Types:**
+- `processing`: Job is being processed (with progress updates)
+- `completed`: Job finished successfully
+- `error`: Job failed
+
+**Fields:**
+- `event_type` (string): Current job status
+- `job_id` (string): Unique job identifier
+- `data` (object): Event-specific data
+  - `progress` (float): Progress percentage (0-100) for `processing` events
+- `timestamp` (integer): Unix timestamp in milliseconds
+
+**Behavior:**
+- Published when `update_job()` is called with progress updates
+- Only published when progress value is provided
+- Not retained (real-time events only)
+- Respects broadcaster connection status
+
+**Environment Variables:**
+- `MQTT_TOPIC`: Override base topic (default: `inference/events`)
+
+### Authentication
+
+**Current Status:** Authentication is **not required** by default.
+
+**To Enable Authentication Later:**
+
+1. **Configure MQTT Broker** with username/password authentication:
+   ```bash
+   # For Mosquitto broker
+   mosquitto_passwd -c /etc/mosquitto/passwd username
+   # Edit /etc/mosquitto/mosquitto.conf
+   allow_anonymous false
+   password_file /etc/mosquitto/passwd
+   ```
+
+2. **Update cl_server_shared** to support authentication:
+   - Add `MQTT_USERNAME` and `MQTT_PASSWORD` environment variables
+   - Modify `MQTTBroadcaster` to accept credentials
+   - Call `client.username_pw_set(username, password)` before connecting
+
+3. **Set Environment Variables:**
+   ```bash
+   export MQTT_USERNAME=worker_user
+   export MQTT_PASSWORD=secure_password
+   ```
+
+**TLS/SSL Support:**
+
+For encrypted connections, the MQTT broadcaster would need to be updated to support TLS:
+- Add `MQTT_USE_TLS` environment variable
+- Configure `client.tls_set()` with certificates
+- Use port 8883 for TLS connections
+
 ## Deployment
 
 The worker can be:
@@ -110,4 +248,55 @@ If upgrading from the old separate `compute.db`:
 ```bash
 # After confirming all old jobs are completed and archived
 rm {CL_SERVER_DIR}/compute.db*
+```
+
+## Quick Reference
+
+### All Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CL_SERVER_DIR` | *(required)* | Path to data directory containing `media_store.db` |
+| `DATABASE_URL` | `sqlite:///{CL_SERVER_DIR}/media_store.db` | Override database path |
+| `WORKER_ID` | `worker-default` | Unique worker identifier |
+| `WORKER_SUPPORTED_TASKS` | *(all available)* | Comma-separated task types |
+| `WORKER_POLL_INTERVAL` | `5` | Seconds between polls when idle |
+| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `MQTT_BROKER` | `localhost` | MQTT broker hostname |
+| `MQTT_PORT` | `1883` | MQTT broker port |
+| `MQTT_TOPIC` | `inference/events` | Base topic for job events |
+| `MQTT_HEARTBEAT_INTERVAL` | `30` | Heartbeat interval in seconds |
+| `CAPABILITY_TOPIC_PREFIX` | `inference/workers` | Base topic for worker capabilities |
+| `BROADCAST_TYPE` | `mqtt` | Broadcaster type (`mqtt` or `noop`) |
+
+### MQTT Topic Summary
+
+| Topic | Type | Purpose | Auth Required |
+|-------|------|---------|---------------|
+| `inference/workers/{worker_id}` | Retained | Worker capability announcements | No (configurable) |
+| `inference/events` | Non-retained | Job progress events | No (configurable) |
+
+### Example Subscriber (Python)
+
+```python
+import paho.mqtt.client as mqtt
+import json
+
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected with result code {rc}")
+    # Subscribe to all worker capabilities
+    client.subscribe("inference/workers/#")
+    # Subscribe to job events
+    client.subscribe("inference/events")
+
+def on_message(client, userdata, msg):
+    payload = json.loads(msg.payload.decode())
+    print(f"Topic: {msg.topic}")
+    print(f"Message: {json.dumps(payload, indent=2)}")
+
+client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
+client.connect("localhost", 1883, 60)
+client.loop_forever()
 ```
