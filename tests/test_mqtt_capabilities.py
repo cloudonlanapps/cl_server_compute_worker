@@ -168,40 +168,173 @@ class TestWorkerCapabilityPublishing:
             assert "image_conversion" in payload["capabilities"]
             assert "video_transcoding" not in payload["capabilities"]
 
-    @pytest.mark.skip(
-        reason="Test uses old module discovery pattern - needs rewrite for library-based worker"
-    )
     def test_heartbeat_publishes_periodically(self, mock_broadcaster):
         """Test that heartbeat task publishes capabilities periodically."""
-        pass
+        import asyncio
 
-    @pytest.mark.skip(
-        reason="Test uses old module discovery pattern - needs rewrite for library-based worker"
-    )
+        from src.worker import ComputeWorker, shutdown_event
+
+        # ensure clean shutdown_event
+        shutdown_event.clear()
+
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
+            mock_library_worker = Mock()
+            mock_library_worker.get_supported_task_types.return_value = [
+                "image_resize",
+            ]
+            mock_worker_class.return_value = mock_library_worker
+
+            worker = ComputeWorker(
+                worker_id="test-worker", supported_tasks=["image_resize"]
+            )
+
+            # Run heartbeat task for a short period and then signal shutdown
+            async def run_for_a_bit():
+                task = asyncio.create_task(worker._heartbeat_task())
+                # let heartbeat run a couple times
+                await asyncio.sleep(0.15)
+                shutdown_event.set()
+                await task
+
+            # shorten the heartbeat interval so it fires quickly in the test
+            with patch("src.worker.MQTT_HEARTBEAT_INTERVAL", 0.05):
+                asyncio.run(run_for_a_bit())
+
+            # publish_retained should have been called at least once
+            assert mock_broadcaster.publish_retained.called
+
     def test_capabilities_include_all_active_tasks(self, mock_broadcaster):
         """Test that published capabilities include all active tasks."""
-        pass
+        from src.worker import ComputeWorker
 
-    @pytest.mark.skip(
-        reason="Test uses old module discovery pattern - needs rewrite for library-based worker"
-    )
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
+
+            # Library reports these task types
+            mock_library_worker = Mock()
+            mock_library_worker.get_supported_task_types.return_value = [
+                "image_resize",
+                "image_conversion",
+                "video_transcoding",
+            ]
+            mock_worker_class.return_value = mock_library_worker
+
+            # Worker requests all available tasks explicitly
+            worker = ComputeWorker(
+                worker_id="test-worker",
+                supported_tasks=list(mock_library_worker.get_supported_task_types()),
+            )
+            worker._publish_worker_capabilities()
+
+            # Extract payload safely
+            call_args = mock_broadcaster.publish_retained.call_args
+            args, kwargs = call_args
+            if args:
+                payload_str = args[1]
+            else:
+                payload_str = kwargs.get("payload")
+
+            payload = json.loads(payload_str)
+
+            # Should include all active tasks from library
+            for t in ["image_resize", "image_conversion", "video_transcoding"]:
+                assert t in payload["capabilities"]
+
     def test_broadcaster_not_connected_skip_publish(self, mock_broadcaster):
         """Test that publish is skipped if broadcaster not connected."""
-        pass
+        from src.worker import ComputeWorker
 
-    @pytest.mark.skip(
-        reason="Idle count tracking changed to simple boolean - this test needs rewrite"
-    )
+        # make broadcaster not connected
+        mock_broadcaster.connected = False
+
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
+            mock_library_worker = Mock()
+            mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
+            mock_worker_class.return_value = mock_library_worker
+
+            worker = ComputeWorker(
+                worker_id="test-worker", supported_tasks=["image_resize"]
+            )
+
+            worker._publish_worker_capabilities()
+
+            # publish_retained should not be called when not connected
+            assert not mock_broadcaster.publish_retained.called
+
     def test_idle_count_never_negative(self, mock_broadcaster):
         """Test that idle count never goes below zero."""
-        pass
+        from src.worker import ComputeWorker
 
-    @pytest.mark.skip(
-        reason="Idle count tracking changed to simple boolean - this test needs rewrite"
-    )
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
+            mock_library_worker = Mock()
+            mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
+            mock_worker_class.return_value = mock_library_worker
+
+            worker = ComputeWorker(
+                worker_id="test-worker", supported_tasks=["image_resize"]
+            )
+
+            # simulate busy then idle
+            worker.is_idle = False
+            worker._publish_worker_capabilities()
+            worker.is_idle = True
+            worker._publish_worker_capabilities()
+
+            # Inspect calls to ensure idle_count is 0 or 1 and never negative
+            for call in mock_broadcaster.publish_retained.call_args_list:
+                args, kwargs = call
+                if args:
+                    payload_str = args[1]
+                else:
+                    payload_str = kwargs.get("payload")
+                payload = json.loads(payload_str)
+                assert payload["idle_count"] >= 0
+
     def test_idle_count_never_exceeds_max(self, mock_broadcaster):
         """Test that idle count never exceeds 1."""
-        pass
+        from src.worker import ComputeWorker
+
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
+            mock_library_worker = Mock()
+            mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
+            mock_worker_class.return_value = mock_library_worker
+
+            worker = ComputeWorker(
+                worker_id="test-worker", supported_tasks=["image_resize"]
+            )
+
+            # call multiple times while idle
+            worker.is_idle = True
+            for _ in range(3):
+                worker._publish_worker_capabilities()
+
+            for call in mock_broadcaster.publish_retained.call_args_list:
+                args, kwargs = call
+                if args:
+                    payload_str = args[1]
+                else:
+                    payload_str = kwargs.get("payload")
+                payload = json.loads(payload_str)
+                assert payload["idle_count"] <= 1
 
 
 class TestBroadcasterMethods:
