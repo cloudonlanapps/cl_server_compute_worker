@@ -10,10 +10,10 @@ import json
 import logging
 import signal
 import time
-from typing import Optional, List
+from typing import Optional, List, Union
 
-# Import from cl_ml_tools
-from cl_ml_tools.worker import Worker
+from cl_ml_tools import Worker
+
 
 # Import from cl_server_shared
 from cl_server_shared import (
@@ -28,6 +28,8 @@ from cl_server_shared import (
     MQTT_BROKER,
     MQTT_PORT,
     MQTT_TOPIC,
+    MQTTBroadcaster,
+    NoOpBroadcaster,
 )
 from cl_server_shared.database import create_db_engine, create_session_factory
 from cl_server_shared.adapters import SQLAlchemyJobRepository
@@ -61,6 +63,7 @@ class ComputeWorker:
         worker_id: str = WORKER_ID,
         supported_tasks: Optional[List[str]] = None,
         poll_interval: int = WORKER_POLL_INTERVAL,
+        broadcaster: Union[MQTTBroadcaster, NoOpBroadcaster] = NoOpBroadcaster(),
     ):
         """Initialize compute worker.
 
@@ -88,18 +91,6 @@ class ComputeWorker:
         # Active tasks are the intersection of requested and available
         self.active_tasks = available_tasks & requested_tasks
 
-        # Initialize MQTT broadcaster
-        self.broadcaster = get_broadcaster(
-            broadcast_type=BROADCAST_TYPE,
-            broker=MQTT_BROKER,
-            port=MQTT_PORT,
-            topic=MQTT_TOPIC,
-        )
-
-        # Track idle count for capability publishing
-        # For now, we process one job at a time, so idle count is 0 or 1
-        self.is_idle = True
-
         # Log initialization details
         logger.info(f"Initialized worker {self.worker_id}")
         logger.info(f"Requested task types: {list(requested_tasks)}")
@@ -118,6 +109,14 @@ class ComputeWorker:
                 )
             else:
                 logger.warning("No task types specified")
+            raise Exception("No tasks assigned")
+
+        # Initialize MQTT broadcaster
+        self.broadcaster = broadcaster
+
+        # Track idle count for capability publishing
+        # For now, we process one job at a time, so idle count is 0 or 1
+        self.is_idle = True
 
     def _publish_worker_capabilities(self):
         """Publish worker capabilities to MQTT with retained message."""
@@ -270,7 +269,9 @@ async def main():
     broadcaster.set_will(lwt_topic, "", qos=1, retain=True)
 
     # Create and run worker
-    worker = ComputeWorker(worker_id=worker_id, supported_tasks=tasks)
+    worker = ComputeWorker(
+        worker_id=worker_id, supported_tasks=tasks, broadcaster=broadcaster
+    )
 
     try:
         await worker.run()
