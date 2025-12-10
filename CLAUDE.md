@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a standalone compute worker service that processes media processing jobs from a shared SQLite database (`media_store.db`) using Write-Ahead Logging (WAL) mode for safe concurrent access. The worker leverages two external libraries:
 - **cl_server_shared**: Provides database models, MQTT broadcast capabilities, configuration, and repository adapters
-- **cl_media_tools**: Provides the job processing engine and task plugins via entry points
+- **cl_ml_tools**: Provides the job processing engine and task plugins via entry points
 
 The worker is independent from any API service and communicates via database and MQTT.
 
@@ -54,17 +54,17 @@ python main.py --worker-id worker-1 --tasks image_resize
 
 ```
 ComputeWorker (src/worker.py)
-    ├── Uses cl_media_tools.worker.Worker (job processing engine)
+    ├── Uses cl_ml_tools.worker.Worker (job processing engine)
     │   └── Discovers task handlers via entry points
     ├── Uses cl_server_shared.adapters.SQLAlchemyJobRepository (database access)
-    │   └── Wraps SQLAlchemy sessions to conform to cl_media_tools interface
+    │   └── Wraps SQLAlchemy sessions to conform to cl_ml_tools interface
     └── Uses cl_server_shared.mqtt.get_broadcaster() (MQTT publishing)
         └── Publishes worker capabilities and heartbeats
 ```
 
 ### Job Processing Flow
 
-1. **Initialization**: Worker creates `cl_media_tools.Worker` instance with repository adapter
+1. **Initialization**: Worker creates `cl_ml_tools.Worker` instance with repository adapter
 2. **Task Discovery**: Library discovers available task handlers from installed plugins via entry points
 3. **Task Filtering**: Worker filters to only `active_tasks` (intersection of requested and available)
 4. **Job Polling**: Calls `library_worker.run_once(task_types)` which:
@@ -141,12 +141,12 @@ Git package: `git+https://github.com/cloudonlanapps/cl_server_shared.git`
 Provides:
 - Database models (`ComputeJob`, `ComputeJobStatus` enums)
 - Configuration loading from environment variables
-- `SQLAlchemyJobRepository` adapter (wraps SQLAlchemy for cl_media_tools)
+- `SQLAlchemyJobRepository` adapter (wraps SQLAlchemy for cl_ml_tools)
 - MQTT broadcaster factory and singleton management
 - Database engine and session factory with WAL mode
 
-### cl_media_tools[compute]
-Git package: `git+https://github.com/cloudonlanapps/cl_media_tools.git`
+### cl_ml_tools[compute]
+Git package: `git+https://github.com/cloudonlanapps/cl_ml_tools.git`
 
 Provides:
 - `Worker` class for job processing
@@ -159,7 +159,7 @@ Task plugins are discovered via entry points. Built-in plugins: `image_resize`, 
 ## Testing Strategy
 
 Tests use mocks for external dependencies:
-- Mock `cl_media_tools.Worker` to test integration
+- Mock `cl_ml_tools.Worker` to test integration
 - Mock `SQLAlchemyJobRepository` to avoid database
 - Mock `get_broadcaster()` to avoid MQTT connection
 
@@ -180,13 +180,13 @@ The worker uses `asyncio` for:
 Signal handlers (SIGINT, SIGTERM) set the shutdown event to stop the worker cleanly.
 
 ### Repository Adapter Pattern
-`SQLAlchemyJobRepository` in `cl_server_shared` implements the interface expected by `cl_media_tools.Worker`, translating between SQLAlchemy models and the library's domain models.
+`SQLAlchemyJobRepository` in `cl_server_shared` implements the interface expected by `cl_ml_tools.Worker`, translating between SQLAlchemy models and the library's domain models.
 
 ### Broadcaster Singleton
 `get_broadcaster()` returns a singleton instance per process. Call `shutdown_broadcaster()` on exit to clean up connections.
 
 ## Migration Notes
 
-This worker previously used a subprocess-based architecture with separate `compute_modules/`. That has been replaced with the `cl_media_tools` library approach where plugins are installed packages discovered via entry points. Old references to `compute_modules/` in `run_all_tests.sh` are legacy.
+This worker previously used a subprocess-based architecture with separate `compute_modules/`. That has been replaced with the `cl_ml_tools` library approach where plugins are installed packages discovered via entry points. Old references to `compute_modules/` in `run_all_tests.sh` are legacy.
 
 The database was previously `compute.db` but has been merged into `media_store.db`.

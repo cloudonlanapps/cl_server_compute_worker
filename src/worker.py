@@ -1,6 +1,6 @@
-"""Compute worker using cl_media_tools library.
+"""Compute worker using cl_ml_tools library.
 
-This worker uses the cl_media_tools library for in-process job execution,
+This worker uses the cl_ml_tools library for in-process job execution,
 replacing the previous subprocess-based approach. Jobs are discovered via
 entry points and executed directly using the library's Worker class.
 """
@@ -12,8 +12,8 @@ import signal
 import time
 from typing import Optional, List
 
-# Import from cl_media_tools
-from cl_media_tools.worker import Worker
+# Import from cl_ml_tools
+from cl_ml_tools.worker import Worker
 
 # Import from cl_server_shared
 from cl_server_shared import (
@@ -54,7 +54,7 @@ def signal_handler(signum, frame):
 
 
 class ComputeWorker:
-    """Compute worker using cl_media_tools library for in-process execution."""
+    """Compute worker using cl_ml_tools library for in-process execution."""
 
     def __init__(
         self,
@@ -76,7 +76,7 @@ class ComputeWorker:
         # Create repository adapter
         self.repository = SQLAlchemyJobRepository(SessionLocal)
 
-        # Create cl_media_tools Worker
+        # Create cl_ml_tools Worker
         self.library_worker = Worker(repository=self.repository)
 
         # Get available task types from library
@@ -109,7 +109,7 @@ class ComputeWorker:
         if not self.active_tasks:
             if requested_tasks and not available_tasks:
                 logger.error(
-                    "No plugins found! Check that cl_media_tools is installed with plugins."
+                    "No plugins found! Check that cl_ml_tools is installed with plugins."
                 )
             elif requested_tasks and available_tasks:
                 logger.warning(
@@ -212,7 +212,7 @@ class ComputeWorker:
             self._clear_worker_capabilities()
 
     async def _process_next_job(self) -> bool:
-        """Process one job using cl_media_tools Worker.
+        """Process one job using cl_ml_tools Worker.
 
         Returns:
             True if a job was processed, False if no jobs available
