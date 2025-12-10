@@ -1,6 +1,6 @@
-"""Tests for worker module using cl_media_tools library.
+"""Tests for worker module using cl_ml_tools library.
 
-Tests verify that the worker correctly integrates with cl_media_tools
+Tests verify that the worker correctly integrates with cl_ml_tools
 and handles job processing, MQTT capabilities, and error cases.
 """
 
@@ -10,23 +10,27 @@ import asyncio
 
 
 class TestWorkerInitialization:
-    """Test worker initialization with cl_media_tools."""
+    """Test worker initialization with cl_ml_tools."""
 
-    @patch('src.worker.Worker')
-    @patch('src.worker.get_broadcaster')
-    @patch('src.worker.SQLAlchemyJobRepository')
-    def test_worker_initialization(self, mock_repo, mock_broadcaster, mock_worker_class):
+    @patch("src.worker.Worker")
+    @patch("src.worker.get_broadcaster")
+    @patch("src.worker.SQLAlchemyJobRepository")
+    def test_worker_initialization(
+        self, mock_repo, mock_broadcaster, mock_worker_class
+    ):
         """Test that worker initializes with library Worker."""
         from src.worker import ComputeWorker
 
         # Mock library worker
         mock_library_worker = Mock()
-        mock_library_worker.get_supported_task_types.return_value = ["image_resize", "image_conversion"]
+        mock_library_worker.get_supported_task_types.return_value = [
+            "image_resize",
+            "image_conversion",
+        ]
         mock_worker_class.return_value = mock_library_worker
 
         worker = ComputeWorker(
-            worker_id="test-worker",
-            supported_tasks=["image_resize"]
+            worker_id="test-worker", supported_tasks=["image_resize"]
         )
 
         assert worker.worker_id == "test-worker"
@@ -34,29 +38,35 @@ class TestWorkerInitialization:
         assert "image_resize" in worker.active_tasks
         assert "image_conversion" not in worker.active_tasks  # Not requested
 
-    @patch('src.worker.Worker')
-    @patch('src.worker.get_broadcaster')
-    @patch('src.worker.SQLAlchemyJobRepository')
-    def test_worker_initialization_all_tasks(self, mock_repo, mock_broadcaster, mock_worker_class):
+    @patch("src.worker.Worker")
+    @patch("src.worker.get_broadcaster")
+    @patch("src.worker.SQLAlchemyJobRepository")
+    def test_worker_initialization_all_tasks(
+        self, mock_repo, mock_broadcaster, mock_worker_class
+    ):
         """Test that worker with None supported_tasks accepts all available."""
         from src.worker import ComputeWorker
 
         mock_library_worker = Mock()
-        mock_library_worker.get_supported_task_types.return_value = ["image_resize", "image_conversion"]
+        mock_library_worker.get_supported_task_types.return_value = [
+            "image_resize",
+            "image_conversion",
+        ]
         mock_worker_class.return_value = mock_library_worker
 
         worker = ComputeWorker(
-            worker_id="test-worker",
-            supported_tasks=None  # Accept all
+            worker_id="test-worker", supported_tasks=None  # Accept all
         )
 
         assert "image_resize" in worker.active_tasks
         assert "image_conversion" in worker.active_tasks
 
-    @patch('src.worker.Worker')
-    @patch('src.worker.get_broadcaster')
-    @patch('src.worker.SQLAlchemyJobRepository')
-    def test_worker_no_matching_tasks(self, mock_repo, mock_broadcaster, mock_worker_class):
+    @patch("src.worker.Worker")
+    @patch("src.worker.get_broadcaster")
+    @patch("src.worker.SQLAlchemyJobRepository")
+    def test_worker_no_matching_tasks(
+        self, mock_repo, mock_broadcaster, mock_worker_class
+    ):
         """Test worker with no matching tasks."""
         from src.worker import ComputeWorker
 
@@ -66,34 +76,37 @@ class TestWorkerInitialization:
 
         worker = ComputeWorker(
             worker_id="test-worker",
-            supported_tasks=["video_processing"]  # Not available
+            supported_tasks=["video_processing"],  # Not available
         )
 
         assert len(worker.active_tasks) == 0
 
 
 class TestWorkerJobProcessing:
-    """Test job processing with cl_media_tools Worker."""
+    """Test job processing with cl_ml_tools Worker."""
 
     @pytest.mark.asyncio
-    @patch('src.worker.Worker')
-    @patch('src.worker.get_broadcaster')
-    @patch('src.worker.SQLAlchemyJobRepository')
-    async def test_process_job_success(self, mock_repo, mock_broadcaster, mock_worker_class):
+    @patch("src.worker.Worker")
+    @patch("src.worker.get_broadcaster")
+    @patch("src.worker.SQLAlchemyJobRepository")
+    async def test_process_job_success(
+        self, mock_repo, mock_broadcaster, mock_worker_class
+    ):
         """Test successful job processing."""
         from src.worker import ComputeWorker
 
         mock_library_worker = Mock()
         mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
+
         # Make run_once async
         async def mock_run_once(task_types):
             return True
+
         mock_library_worker.run_once = mock_run_once
         mock_worker_class.return_value = mock_library_worker
 
         worker = ComputeWorker(
-            worker_id="test-worker",
-            supported_tasks=["image_resize"]
+            worker_id="test-worker", supported_tasks=["image_resize"]
         )
 
         result = await worker._process_next_job()
@@ -102,24 +115,27 @@ class TestWorkerJobProcessing:
         assert worker.is_idle is True  # Should be idle after processing
 
     @pytest.mark.asyncio
-    @patch('src.worker.Worker')
-    @patch('src.worker.get_broadcaster')
-    @patch('src.worker.SQLAlchemyJobRepository')
-    async def test_process_no_job_available(self, mock_repo, mock_broadcaster, mock_worker_class):
+    @patch("src.worker.Worker")
+    @patch("src.worker.get_broadcaster")
+    @patch("src.worker.SQLAlchemyJobRepository")
+    async def test_process_no_job_available(
+        self, mock_repo, mock_broadcaster, mock_worker_class
+    ):
         """Test behavior when no jobs are available."""
         from src.worker import ComputeWorker
 
         mock_library_worker = Mock()
         mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
+
         # Make run_once async
         async def mock_run_once(task_types):
             return False  # No job available
+
         mock_library_worker.run_once = mock_run_once
         mock_worker_class.return_value = mock_library_worker
 
         worker = ComputeWorker(
-            worker_id="test-worker",
-            supported_tasks=["image_resize"]
+            worker_id="test-worker", supported_tasks=["image_resize"]
         )
 
         result = await worker._process_next_job()
@@ -128,24 +144,27 @@ class TestWorkerJobProcessing:
         assert worker.is_idle is True
 
     @pytest.mark.asyncio
-    @patch('src.worker.Worker')
-    @patch('src.worker.get_broadcaster')
-    @patch('src.worker.SQLAlchemyJobRepository')
-    async def test_process_job_exception(self, mock_repo, mock_broadcaster, mock_worker_class):
+    @patch("src.worker.Worker")
+    @patch("src.worker.get_broadcaster")
+    @patch("src.worker.SQLAlchemyJobRepository")
+    async def test_process_job_exception(
+        self, mock_repo, mock_broadcaster, mock_worker_class
+    ):
         """Test job processing with exception."""
         from src.worker import ComputeWorker
 
         mock_library_worker = Mock()
         mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
+
         # Make run_once async that raises exception
         async def mock_run_once(task_types):
             raise RuntimeError("Test error")
+
         mock_library_worker.run_once = mock_run_once
         mock_worker_class.return_value = mock_library_worker
 
         worker = ComputeWorker(
-            worker_id="test-worker",
-            supported_tasks=["image_resize"]
+            worker_id="test-worker", supported_tasks=["image_resize"]
         )
 
         result = await worker._process_next_job()
@@ -157,10 +176,12 @@ class TestWorkerJobProcessing:
 class TestWorkerCapabilities:
     """Test MQTT capability publishing."""
 
-    @patch('src.worker.Worker')
-    @patch('src.worker.get_broadcaster')
-    @patch('src.worker.SQLAlchemyJobRepository')
-    def test_publish_capabilities(self, mock_repo, mock_broadcaster_func, mock_worker_class):
+    @patch("src.worker.Worker")
+    @patch("src.worker.get_broadcaster")
+    @patch("src.worker.SQLAlchemyJobRepository")
+    def test_publish_capabilities(
+        self, mock_repo, mock_broadcaster_func, mock_worker_class
+    ):
         """Test capability publishing to MQTT."""
         from src.worker import ComputeWorker
 
@@ -170,12 +191,15 @@ class TestWorkerCapabilities:
         mock_broadcaster_func.return_value = mock_broadcaster
 
         mock_library_worker = Mock()
-        mock_library_worker.get_supported_task_types.return_value = ["image_resize", "image_conversion"]
+        mock_library_worker.get_supported_task_types.return_value = [
+            "image_resize",
+            "image_conversion",
+        ]
         mock_worker_class.return_value = mock_library_worker
 
         worker = ComputeWorker(
             worker_id="test-worker",
-            supported_tasks=["image_resize", "image_conversion"]
+            supported_tasks=["image_resize", "image_conversion"],
         )
 
         worker._publish_worker_capabilities()
@@ -191,10 +215,12 @@ class TestWorkerCapabilities:
         assert "image_conversion" in payload
         assert "idle_count" in payload
 
-    @patch('src.worker.Worker')
-    @patch('src.worker.get_broadcaster')
-    @patch('src.worker.SQLAlchemyJobRepository')
-    def test_publish_capabilities_not_connected(self, mock_repo, mock_broadcaster_func, mock_worker_class):
+    @patch("src.worker.Worker")
+    @patch("src.worker.get_broadcaster")
+    @patch("src.worker.SQLAlchemyJobRepository")
+    def test_publish_capabilities_not_connected(
+        self, mock_repo, mock_broadcaster_func, mock_worker_class
+    ):
         """Test capability publishing when MQTT not connected."""
         from src.worker import ComputeWorker
 
@@ -207,8 +233,7 @@ class TestWorkerCapabilities:
         mock_worker_class.return_value = mock_library_worker
 
         worker = ComputeWorker(
-            worker_id="test-worker",
-            supported_tasks=["image_resize"]
+            worker_id="test-worker", supported_tasks=["image_resize"]
         )
 
         # Should not raise exception
