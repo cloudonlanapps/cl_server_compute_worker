@@ -74,12 +74,13 @@ class TestWorkerInitialization:
         mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
         mock_worker_class.return_value = mock_library_worker
 
-        worker = ComputeWorker(
-            worker_id="test-worker",
-            supported_tasks=["video_processing"],  # Not available
-        )
+        with pytest.raises(Exception) as exc_info:
+            ComputeWorker(
+                worker_id="test-worker",
+                supported_tasks=["video_processing"],  # Not available
+            )
 
-        assert len(worker.active_tasks) == 0
+        assert "No tasks assigned" in str(exc_info.value)
 
 
 class TestWorkerJobProcessing:
@@ -207,8 +208,8 @@ class TestWorkerCapabilities:
         # Verify publish was called
         mock_broadcaster.publish_retained.assert_called_once()
         call_args = mock_broadcaster.publish_retained.call_args
-        topic = call_args[0][0]
-        payload = call_args[0][1]
+        topic = call_args.kwargs.get("topic")
+        payload = call_args.kwargs.get("payload")
 
         assert "test-worker" in topic
         assert "image_resize" in payload

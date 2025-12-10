@@ -46,13 +46,21 @@ class TestWorkerCapabilityPublishing:
             assert mock_broadcaster.publish_retained.called
             call_args = mock_broadcaster.publish_retained.call_args
 
+            # Extract topic and payload from call args/kwargs (support both positional and kw calls)
+            args, kwargs = call_args
+            if args:
+                topic = args[0]
+                payload_str = args[1]
+            else:
+                topic = kwargs.get("topic")
+                payload_str = kwargs.get("payload")
+
+            assert topic is not None, "publish_retained was called without a topic"
             # Check topic format
-            topic = call_args[0][0]
             assert "test-worker" in topic
             assert topic.startswith("inference/workers/")
 
             # Check payload structure
-            payload_str = call_args[0][1]
             payload = json.loads(payload_str)
 
             assert "id" in payload
@@ -148,7 +156,11 @@ class TestWorkerCapabilityPublishing:
 
             # Check published capabilities
             call_args = mock_broadcaster.publish_retained.call_args
-            payload_str = call_args[0][1]
+            args, kwargs = call_args
+            if args:
+                payload_str = args[1]
+            else:
+                payload_str = kwargs.get("payload")
             payload = json.loads(payload_str)
 
             # Should only include requested tasks that are available
@@ -199,7 +211,7 @@ class TestBroadcasterMethods:
         """Test that broadcaster has set_will method."""
         from cl_ml_tools import MQTTBroadcaster
 
-        broadcaster = MQTTBroadcaster("localhost", 1883)
+        broadcaster = MQTTBroadcaster(broker="localhost", port=1883)
         try:
             assert hasattr(broadcaster, "set_will")
             assert callable(broadcaster.set_will)
@@ -212,7 +224,7 @@ class TestBroadcasterMethods:
         """Test that broadcaster has publish_retained method."""
         from cl_ml_tools import MQTTBroadcaster
 
-        broadcaster = MQTTBroadcaster("localhost", 1883)
+        broadcaster = MQTTBroadcaster(broker="localhost", port=1883)
         try:
             assert hasattr(broadcaster, "publish_retained")
             assert callable(broadcaster.publish_retained)
@@ -240,7 +252,7 @@ class TestBroadcasterMethods:
         """
         from cl_ml_tools import MQTTBroadcaster
 
-        broadcaster = MQTTBroadcaster("localhost", 1883)
+        broadcaster = MQTTBroadcaster(broker="localhost", port=1883)
         try:
             # Skip test if clear_retained not yet implemented in cl_server_shared
             if not hasattr(broadcaster, "clear_retained"):

@@ -12,7 +12,7 @@ import signal
 import time
 from typing import Optional, List, Union
 
-from cl_ml_tools import Worker
+from cl_ml_tools import Worker, MQTTBroadcaster, NoOpBroadcaster
 
 
 # Import from cl_server_shared
@@ -28,12 +28,11 @@ from cl_server_shared import (
     MQTT_BROKER,
     MQTT_PORT,
     MQTT_TOPIC,
-    MQTTBroadcaster,
-    NoOpBroadcaster,
+    get_broadcaster,
+    shutdown_broadcaster,
 )
 from cl_server_shared.database import create_db_engine, create_session_factory
 from cl_server_shared.adapters import SQLAlchemyJobRepository
-from cl_server_shared.mqtt import get_broadcaster, shutdown_broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ class ComputeWorker:
         worker_id: str = WORKER_ID,
         supported_tasks: Optional[List[str]] = None,
         poll_interval: int = WORKER_POLL_INTERVAL,
-        broadcaster: Union[MQTTBroadcaster, NoOpBroadcaster] = NoOpBroadcaster(),
+        broadcaster: Optional[Union[MQTTBroadcaster, NoOpBroadcaster]] = None,
     ):
         """Initialize compute worker.
 
@@ -111,8 +110,21 @@ class ComputeWorker:
                 logger.warning("No task types specified")
             raise Exception("No tasks assigned")
 
-        # Initialize MQTT broadcaster
-        self.broadcaster = broadcaster
+        # Initialize MQTT broadcaster. Avoid creating a default broadcaster
+        # at function-definition time (it may come from a different package
+        # on sys.path). Prefer `get_broadcaster` when available, else
+        # instantiate a NoOpBroadcaster safely.
+        if broadcaster is not None:
+            self.broadcaster = broadcaster
+
+        else:
+            try:
+                # Prefer the shared get_broadcaster factory
+                self.broadcaster = get_broadcaster(
+                    BROADCAST_TYPE, MQTT_BROKER, MQTT_PORT
+                )
+            except Exception:
+                raise
 
         # Track idle count for capability publishing
         # For now, we process one job at a time, so idle count is 0 or 1
@@ -120,6 +132,9 @@ class ComputeWorker:
 
     def _publish_worker_capabilities(self):
         """Publish worker capabilities to MQTT with retained message."""
+        if not self.broadcaster:
+            logger.warning("MQTT broadcaster not setup, skipping capability publish")
+            return
         if not self.broadcaster.connected:
             logger.warning(
                 "MQTT broadcaster not connected, skipping capability publish"
@@ -136,7 +151,7 @@ class ComputeWorker:
         topic = f"{CAPABILITY_TOPIC_PREFIX}/{self.worker_id}"
         payload = json.dumps(capabilities_msg)
 
-        success = self.broadcaster.publish_retained(topic, payload, qos=1)
+        success = self.broadcaster.publish_retained(topic=topic, payload=payload, qos=1)
         if success:
             logger.info(f"Published worker capabilities to {topic}")
             logger.info(f"  - Active capabilities: {list(self.active_tasks)}")
@@ -146,6 +161,9 @@ class ComputeWorker:
 
     def _clear_worker_capabilities(self):
         """Clear retained worker capabilities from MQTT."""
+        if not self.broadcaster:
+            logger.warning("MQTT broadcaster not setup, skipping capability publish")
+            return
         if not self.broadcaster.connected:
             logger.warning("MQTT broadcaster not connected, skipping capability clear")
             return
@@ -263,10 +281,10 @@ async def main():
         broadcast_type=BROADCAST_TYPE,
         broker=MQTT_BROKER,
         port=MQTT_PORT,
-        topic=MQTT_TOPIC,
     )
     lwt_topic = f"{CAPABILITY_TOPIC_PREFIX}/{worker_id}"
-    broadcaster.set_will(lwt_topic, "", qos=1, retain=True)
+
+    broadcaster.set_will(topic=lwt_topic, payload="", qos=1, retain=True)
 
     # Create and run worker
     worker = ComputeWorker(
