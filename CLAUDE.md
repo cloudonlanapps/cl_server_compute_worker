@@ -54,7 +54,7 @@ python main.py --worker-id worker-1 --tasks image_resize
 
 ```
 ComputeWorker (src/worker.py)
-    ├── Uses cl_ml_tools.worker.Worker (job processing engine)
+    ├── Uses cl_ml_tools.Worker (job processing engine)
     │   └── Discovers task handlers via entry points
     ├── Uses cl_server_shared.adapters.SQLAlchemyJobRepository (database access)
     │   └── Wraps SQLAlchemy sessions to conform to cl_ml_tools interface
@@ -145,7 +145,7 @@ Provides:
 - MQTT broadcaster factory and singleton management
 - Database engine and session factory with WAL mode
 
-### cl_ml_tools[compute]
+### cl_ml_tools
 Git package: `git+https://github.com/cloudonlanapps/cl_ml_tools.git`
 
 Provides:

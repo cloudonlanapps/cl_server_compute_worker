@@ -7,7 +7,7 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "paho-mqtt>=1.6.0",
     "cl-server-shared[all] @ git+https://github.com/cloudonlanapps/cl_server_shared.git",
-    "cl_ml_tools[compute] @ git+https://github.com/cloudonlanapps/cl_ml_tools.git",
+    "cl_ml_tools @ git+https://github.com/cloudonlanapps/cl_ml_tools.git",
     "Pillow>=9.0.0",
 ]
 

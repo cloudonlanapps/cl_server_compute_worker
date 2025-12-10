@@ -28,7 +28,7 @@ The worker requires:
 - `sqlalchemy>=2.0.0` - Database access with WAL support
 - `paho-mqtt>=1.6.0` - Event broadcasting
 - `cl-server-shared` - Shared configuration, models, and MQTT utilities
-- `cl_ml_tools[compute]` - Job processing engine and task plugins
+- `cl_ml_tools` - Job processing engine and task plugins
 
 ## Database Configuration
 
