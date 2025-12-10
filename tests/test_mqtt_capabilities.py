@@ -23,15 +23,23 @@ class TestWorkerCapabilityPublishing:
         from src.worker import ComputeWorker
 
         # Mock the library Worker
-        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
-             patch("src.worker.Worker") as mock_worker_class, \
-             patch("src.worker.SQLAlchemyJobRepository"):
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
 
             mock_library_worker = Mock()
-            mock_library_worker.get_supported_task_types.return_value = ["image_resize", "image_conversion"]
+            mock_library_worker.get_supported_task_types.return_value = [
+                "image_resize",
+                "image_conversion",
+            ]
             mock_worker_class.return_value = mock_library_worker
 
-            worker = ComputeWorker(worker_id="test-worker", supported_tasks=["image_resize", "image_conversion"])
+            worker = ComputeWorker(
+                worker_id="test-worker",
+                supported_tasks=["image_resize", "image_conversion"],
+            )
             worker._publish_worker_capabilities()
 
             # Verify publish_retained was called
@@ -57,15 +65,23 @@ class TestWorkerCapabilityPublishing:
         """Test that worker starts in idle state."""
         from src.worker import ComputeWorker
 
-        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
-             patch("src.worker.Worker") as mock_worker_class, \
-             patch("src.worker.SQLAlchemyJobRepository"):
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
 
             mock_library_worker = Mock()
-            mock_library_worker.get_supported_task_types.return_value = ["image_resize", "image_conversion"]
+            mock_library_worker.get_supported_task_types.return_value = [
+                "image_resize",
+                "image_conversion",
+            ]
             mock_worker_class.return_value = mock_library_worker
 
-            worker = ComputeWorker(worker_id="test-worker", supported_tasks=["image_resize", "image_conversion"])
+            worker = ComputeWorker(
+                worker_id="test-worker",
+                supported_tasks=["image_resize", "image_conversion"],
+            )
 
             # Worker should start idle
             assert worker.is_idle is True
@@ -75,15 +91,18 @@ class TestWorkerCapabilityPublishing:
         from src.worker import ComputeWorker
         import asyncio
 
-        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
-             patch("src.worker.Worker") as mock_worker_class, \
-             patch("src.worker.SQLAlchemyJobRepository"):
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
 
             mock_library_worker = Mock()
             mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
 
             # Track state changes
             idle_states = []
+
             async def mock_run_once(task_types):
                 idle_states.append(worker.is_idle)
                 return True
@@ -91,7 +110,9 @@ class TestWorkerCapabilityPublishing:
             mock_library_worker.run_once = mock_run_once
             mock_worker_class.return_value = mock_library_worker
 
-            worker = ComputeWorker(worker_id="test-worker", supported_tasks=["image_resize"])
+            worker = ComputeWorker(
+                worker_id="test-worker", supported_tasks=["image_resize"]
+            )
 
             # Run job processing
             asyncio.run(worker._process_next_job())
@@ -103,23 +124,25 @@ class TestWorkerCapabilityPublishing:
         """Test that published capabilities come from library's task registry."""
         from src.worker import ComputeWorker
 
-        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
-             patch("src.worker.Worker") as mock_worker_class, \
-             patch("src.worker.SQLAlchemyJobRepository"):
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
 
             # Library reports these task types
             mock_library_worker = Mock()
             mock_library_worker.get_supported_task_types.return_value = [
                 "image_resize",
                 "image_conversion",
-                "video_transcoding"
+                "video_transcoding",
             ]
             mock_worker_class.return_value = mock_library_worker
 
             # Worker only requests image tasks
             worker = ComputeWorker(
                 worker_id="test-worker",
-                supported_tasks=["image_resize", "image_conversion"]
+                supported_tasks=["image_resize", "image_conversion"],
             )
             worker._publish_worker_capabilities()
 
@@ -133,27 +156,37 @@ class TestWorkerCapabilityPublishing:
             assert "image_conversion" in payload["capabilities"]
             assert "video_transcoding" not in payload["capabilities"]
 
-    @pytest.mark.skip(reason="Test uses old module discovery pattern - needs rewrite for library-based worker")
+    @pytest.mark.skip(
+        reason="Test uses old module discovery pattern - needs rewrite for library-based worker"
+    )
     def test_heartbeat_publishes_periodically(self, mock_broadcaster):
         """Test that heartbeat task publishes capabilities periodically."""
         pass
 
-    @pytest.mark.skip(reason="Test uses old module discovery pattern - needs rewrite for library-based worker")
+    @pytest.mark.skip(
+        reason="Test uses old module discovery pattern - needs rewrite for library-based worker"
+    )
     def test_capabilities_include_all_active_tasks(self, mock_broadcaster):
         """Test that published capabilities include all active tasks."""
         pass
 
-    @pytest.mark.skip(reason="Test uses old module discovery pattern - needs rewrite for library-based worker")
+    @pytest.mark.skip(
+        reason="Test uses old module discovery pattern - needs rewrite for library-based worker"
+    )
     def test_broadcaster_not_connected_skip_publish(self, mock_broadcaster):
         """Test that publish is skipped if broadcaster not connected."""
         pass
 
-    @pytest.mark.skip(reason="Idle count tracking changed to simple boolean - this test needs rewrite")
+    @pytest.mark.skip(
+        reason="Idle count tracking changed to simple boolean - this test needs rewrite"
+    )
     def test_idle_count_never_negative(self, mock_broadcaster):
         """Test that idle count never goes below zero."""
         pass
 
-    @pytest.mark.skip(reason="Idle count tracking changed to simple boolean - this test needs rewrite")
+    @pytest.mark.skip(
+        reason="Idle count tracking changed to simple boolean - this test needs rewrite"
+    )
     def test_idle_count_never_exceeds_max(self, mock_broadcaster):
         """Test that idle count never exceeds 1."""
         pass
@@ -164,33 +197,33 @@ class TestBroadcasterMethods:
 
     def test_set_will_method_exists(self):
         """Test that broadcaster has set_will method."""
-        from cl_server_shared.mqtt import MQTTBroadcaster
+        from cl_ml_tools import MQTTBroadcaster
 
-        broadcaster = MQTTBroadcaster("localhost", 1883, "test/topic")
+        broadcaster = MQTTBroadcaster("localhost", 1883)
         try:
             assert hasattr(broadcaster, "set_will")
             assert callable(broadcaster.set_will)
         finally:
             # Disconnect to prevent connection leaks
-            if hasattr(broadcaster, 'disconnect'):
+            if hasattr(broadcaster, "disconnect"):
                 broadcaster.disconnect()
 
     def test_publish_retained_method_exists(self):
         """Test that broadcaster has publish_retained method."""
-        from cl_server_shared.mqtt import MQTTBroadcaster
+        from cl_ml_tools import MQTTBroadcaster
 
-        broadcaster = MQTTBroadcaster("localhost", 1883, "test/topic")
+        broadcaster = MQTTBroadcaster("localhost", 1883)
         try:
             assert hasattr(broadcaster, "publish_retained")
             assert callable(broadcaster.publish_retained)
         finally:
             # Disconnect to prevent connection leaks
-            if hasattr(broadcaster, 'disconnect'):
+            if hasattr(broadcaster, "disconnect"):
                 broadcaster.disconnect()
 
     def test_noop_broadcaster_has_methods(self):
         """Test that NoOp broadcaster implements required methods."""
-        from cl_server_shared.mqtt import NoOpBroadcaster
+        from cl_ml_tools import NoOpBroadcaster
 
         broadcaster = NoOpBroadcaster()
         assert hasattr(broadcaster, "set_will")
@@ -201,22 +234,24 @@ class TestBroadcasterMethods:
     def test_clear_retained_method_exists(self):
         """Test that broadcaster has clear_retained method.
 
-        Note: This test verifies that cl_server_shared.mqtt.MQTTBroadcaster
+        Note: This test verifies that cl_ml_tools.MQTTBroadcaster
         has implemented the clear_retained method. If this test fails, it means
         the cl_server_shared package needs to be updated.
         """
-        from cl_server_shared.mqtt import MQTTBroadcaster
+        from cl_ml_tools import MQTTBroadcaster
 
-        broadcaster = MQTTBroadcaster("localhost", 1883, "test/topic")
+        broadcaster = MQTTBroadcaster("localhost", 1883)
         try:
             # Skip test if clear_retained not yet implemented in cl_server_shared
             if not hasattr(broadcaster, "clear_retained"):
-                pytest.skip("clear_retained method not yet implemented in cl_server_shared")
+                pytest.skip(
+                    "clear_retained method not yet implemented in cl_server_shared"
+                )
 
             assert callable(broadcaster.clear_retained)
         finally:
             # Disconnect to prevent connection leaks
-            if hasattr(broadcaster, 'disconnect'):
+            if hasattr(broadcaster, "disconnect"):
                 broadcaster.disconnect()
 
 
@@ -234,9 +269,11 @@ class TestWorkerShutdown:
         mock_broadcaster.publish_retained.return_value = True
         mock_broadcaster.clear_retained = Mock(return_value=True)
 
-        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
-             patch("src.worker.Worker") as mock_worker_class, \
-             patch("src.worker.SQLAlchemyJobRepository"):
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
 
             mock_library_worker = Mock()
             mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
@@ -250,7 +287,9 @@ class TestWorkerShutdown:
             mock_library_worker.run_once = mock_run_once
             mock_worker_class.return_value = mock_library_worker
 
-            worker = ComputeWorker(worker_id="test-worker", supported_tasks=["image_resize"])
+            worker = ComputeWorker(
+                worker_id="test-worker", supported_tasks=["image_resize"]
+            )
 
             # Clear shutdown event before running
             shutdown_event.clear()
@@ -272,15 +311,19 @@ class TestWorkerShutdown:
         mock_broadcaster.connected = True
         mock_broadcaster.clear_retained = Mock(return_value=True)
 
-        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
-             patch("src.worker.Worker") as mock_worker_class, \
-             patch("src.worker.SQLAlchemyJobRepository"):
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
 
             mock_library_worker = Mock()
             mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
             mock_worker_class.return_value = mock_library_worker
 
-            worker = ComputeWorker(worker_id="test-worker", supported_tasks=["image_resize"])
+            worker = ComputeWorker(
+                worker_id="test-worker", supported_tasks=["image_resize"]
+            )
 
             # Call clear method
             worker._clear_worker_capabilities()
@@ -298,19 +341,25 @@ class TestWorkerShutdown:
         mock_broadcaster = MagicMock()
         mock_broadcaster.connected = False
 
-        with patch("src.worker.get_broadcaster", return_value=mock_broadcaster), \
-             patch("src.worker.Worker") as mock_worker_class, \
-             patch("src.worker.SQLAlchemyJobRepository"):
+        with (
+            patch("src.worker.get_broadcaster", return_value=mock_broadcaster),
+            patch("src.worker.Worker") as mock_worker_class,
+            patch("src.worker.SQLAlchemyJobRepository"),
+        ):
 
             mock_library_worker = Mock()
             mock_library_worker.get_supported_task_types.return_value = ["image_resize"]
             mock_worker_class.return_value = mock_library_worker
 
-            worker = ComputeWorker(worker_id="test-worker", supported_tasks=["image_resize"])
+            worker = ComputeWorker(
+                worker_id="test-worker", supported_tasks=["image_resize"]
+            )
 
             # Should not raise exception
             worker._clear_worker_capabilities()
 
             # Verify clear_retained was not called
-            assert not hasattr(mock_broadcaster, 'clear_retained') or \
-                   not mock_broadcaster.clear_retained.called
+            assert (
+                not hasattr(mock_broadcaster, "clear_retained")
+                or not mock_broadcaster.clear_retained.called
+            )
