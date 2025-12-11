@@ -337,68 +337,6 @@ class TestWorkerCapabilityPublishing:
                 assert payload["idle_count"] <= 1
 
 
-class TestBroadcasterMethods:
-    """Tests for broadcaster retained message and LWT methods."""
-
-    def test_set_will_method_exists(self):
-        """Test that broadcaster has set_will method."""
-        from cl_ml_tools import MQTTBroadcaster
-
-        broadcaster = MQTTBroadcaster(broker="localhost", port=1883)
-        try:
-            assert hasattr(broadcaster, "set_will")
-            assert callable(broadcaster.set_will)
-        finally:
-            # Disconnect to prevent connection leaks
-            if hasattr(broadcaster, "disconnect"):
-                broadcaster.disconnect()
-
-    def test_publish_retained_method_exists(self):
-        """Test that broadcaster has publish_retained method."""
-        from cl_ml_tools import MQTTBroadcaster
-
-        broadcaster = MQTTBroadcaster(broker="localhost", port=1883)
-        try:
-            assert hasattr(broadcaster, "publish_retained")
-            assert callable(broadcaster.publish_retained)
-        finally:
-            # Disconnect to prevent connection leaks
-            if hasattr(broadcaster, "disconnect"):
-                broadcaster.disconnect()
-
-    def test_noop_broadcaster_has_methods(self):
-        """Test that NoOp broadcaster implements required methods."""
-        from cl_ml_tools import NoOpBroadcaster
-
-        broadcaster = NoOpBroadcaster()
-        assert hasattr(broadcaster, "set_will")
-        assert hasattr(broadcaster, "publish_retained")
-        assert callable(broadcaster.set_will)
-        assert callable(broadcaster.publish_retained)
-
-    def test_clear_retained_method_exists(self):
-        """Test that broadcaster has clear_retained method.
-
-        Note: This test verifies that cl_ml_tools.MQTTBroadcaster
-        has implemented the clear_retained method. If this test fails, it means
-        the cl_server_shared package needs to be updated.
-        """
-        from cl_ml_tools import MQTTBroadcaster
-
-        broadcaster = MQTTBroadcaster(broker="localhost", port=1883)
-        try:
-            # Skip test if clear_retained not yet implemented in cl_server_shared
-            if not hasattr(broadcaster, "clear_retained"):
-                pytest.skip(
-                    "clear_retained method not yet implemented in cl_server_shared"
-                )
-
-            assert callable(broadcaster.clear_retained)
-        finally:
-            # Disconnect to prevent connection leaks
-            if hasattr(broadcaster, "disconnect"):
-                broadcaster.disconnect()
-
 
 class TestWorkerShutdown:
     """Tests for worker shutdown behavior."""

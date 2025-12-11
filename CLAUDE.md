@@ -58,7 +58,7 @@ ComputeWorker (src/worker.py)
     │   └── Discovers task handlers via entry points
     ├── Uses cl_server_shared.adapters.SQLAlchemyJobRepository (database access)
     │   └── Wraps SQLAlchemy sessions to conform to cl_ml_tools interface
-    └── Uses cl_server_shared.mqtt.get_broadcaster() (MQTT publishing)
+    └── Uses cl_ml_tools.get_broadcaster() (MQTT publishing)
         └── Publishes worker capabilities and heartbeats
 ```
 
