@@ -12,35 +12,45 @@ import signal
 import time
 from typing import Optional, List, Union
 
-    
-from cl_ml_tools import Worker, MQTTBroadcaster, NoOpBroadcaster, get_broadcaster, shutdown_broadcaster
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+
+from cl_ml_tools import (
+    Worker,
+    MQTTBroadcaster,
+    NoOpBroadcaster,
+    get_broadcaster,
+    shutdown_broadcaster,
+)
 
 
 # Import from cl_server_shared
-from cl_server_shared import (
-    WORKER_DATABASE_URL as DATABASE_URL,
-    WORKER_ID,
-    WORKER_SUPPORTED_TASKS,
-    WORKER_POLL_INTERVAL,
-    LOG_LEVEL,
-    MQTT_HEARTBEAT_INTERVAL,
-    CAPABILITY_TOPIC_PREFIX,
-    BROADCAST_TYPE,
-    MQTT_BROKER,
-    MQTT_PORT,
-)
-from cl_server_shared.database import create_db_engine, create_session_factory
-from cl_server_shared.adapters import SQLAlchemyJobRepository
+from cl_server_shared import Config
+from cl_server_shared import SQLAlchemyJobRepository
+from cl_server_shared.models import Base
 
 logger = logging.getLogger(__name__)
 
 # Configure logging
-logging.basicConfig(level=LOG_LEVEL)
-logger.setLevel(LOG_LEVEL)
+logging.basicConfig(level=Config.LOG_LEVEL)
+logger.setLevel(Config.LOG_LEVEL)
 
-# Setup database
-engine = create_db_engine(DATABASE_URL, echo=False)
-SessionLocal = create_session_factory(engine)
+# Setup database with WAL mode
+engine = create_engine(Config.STORE_DATABASE_URL, echo=False)
+
+# Enable WAL mode for SQLite
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_conn, connection_record):
+    """Enable WAL mode for concurrent access."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
+
+# Create tables if they don't exist
+Base.metadata.create_all(engine)
+
+# Create session factory
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Shutdown event
 shutdown_event = asyncio.Event()
@@ -57,9 +67,9 @@ class ComputeWorker:
 
     def __init__(
         self,
-        worker_id: str = WORKER_ID,
+        worker_id: str = Config.WORKER_ID,
         supported_tasks: Optional[List[str]] = None,
-        poll_interval: int = WORKER_POLL_INTERVAL,
+        poll_interval: int = Config.WORKER_POLL_INTERVAL,
         broadcaster: Optional[Union[MQTTBroadcaster, NoOpBroadcaster]] = None,
     ):
         """Initialize compute worker.
@@ -70,7 +80,7 @@ class ComputeWorker:
             poll_interval: Seconds between polls when no jobs available
         """
         self.worker_id = worker_id
-        self.requested_tasks = supported_tasks or WORKER_SUPPORTED_TASKS
+        self.requested_tasks = supported_tasks or Config.WORKER_SUPPORTED_TASKS
         self.poll_interval = poll_interval
 
         # Create repository adapter
@@ -119,7 +129,7 @@ class ComputeWorker:
             try:
                 # Prefer the shared get_broadcaster factory
                 self.broadcaster = get_broadcaster(
-                    BROADCAST_TYPE, MQTT_BROKER, MQTT_PORT
+                    Config.BROADCAST_TYPE, Config.MQTT_BROKER, Config.MQTT_PORT
                 )
             except Exception:
                 raise
@@ -146,7 +156,7 @@ class ComputeWorker:
             "timestamp": int(time.time() * 1000),
         }
 
-        topic = f"{CAPABILITY_TOPIC_PREFIX}/{self.worker_id}"
+        topic = f"{Config.CAPABILITY_TOPIC_PREFIX}/{self.worker_id}"
         payload = json.dumps(capabilities_msg)
 
         success = self.broadcaster.publish_retained(topic=topic, payload=payload, qos=1)
@@ -166,7 +176,7 @@ class ComputeWorker:
             logger.warning("MQTT broadcaster not connected, skipping capability clear")
             return
 
-        topic = f"{CAPABILITY_TOPIC_PREFIX}/{self.worker_id}"
+        topic = f"{Config.CAPABILITY_TOPIC_PREFIX}/{self.worker_id}"
 
         success = self.broadcaster.clear_retained(topic)
         if success:
@@ -178,11 +188,11 @@ class ComputeWorker:
         """Background task to publish heartbeat periodically."""
         logger.info(
             f"Heartbeat task started for {self.worker_id} "
-            f"(interval: {MQTT_HEARTBEAT_INTERVAL}s)"
+            f"(interval: {Config.MQTT_HEARTBEAT_INTERVAL}s)"
         )
         try:
             while not shutdown_event.is_set():
-                await asyncio.sleep(MQTT_HEARTBEAT_INTERVAL)
+                await asyncio.sleep(Config.MQTT_HEARTBEAT_INTERVAL)
                 if not shutdown_event.is_set():
                     self._publish_worker_capabilities()
         except asyncio.CancelledError:
@@ -263,7 +273,7 @@ async def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--worker-id", default=WORKER_ID)
+    parser.add_argument("--worker-id", default=Config.WORKER_ID)
     parser.add_argument("--tasks", default=None, help="Comma-separated list of tasks")
     args = parser.parse_args()
 
@@ -276,13 +286,15 @@ async def main():
 
     # Setup MQTT LWT (Last Will & Testament) before connecting
     broadcaster = get_broadcaster(
-        broadcast_type=BROADCAST_TYPE,
-        broker=MQTT_BROKER,
-        port=MQTT_PORT,
+        broadcast_type=Config.BROADCAST_TYPE,
+        broker=Config.MQTT_BROKER,
+        port=Config.MQTT_PORT,
     )
-    lwt_topic = f"{CAPABILITY_TOPIC_PREFIX}/{worker_id}"
 
-    broadcaster.set_will(topic=lwt_topic, payload="", qos=1, retain=True)
+    lwt_topic = f"{Config.CAPABILITY_TOPIC_PREFIX}/{worker_id}"
+
+    if broadcaster:
+        broadcaster.set_will(topic=lwt_topic, payload="", qos=1, retain=True)
 
     # Create and run worker
     worker = ComputeWorker(

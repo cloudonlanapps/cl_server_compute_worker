@@ -201,7 +201,7 @@ class TestWorkerCapabilityPublishing:
                 await task
 
             # shorten the heartbeat interval so it fires quickly in the test
-            with patch("src.worker.MQTT_HEARTBEAT_INTERVAL", 0.05):
+            with patch("src.worker.Config.MQTT_HEARTBEAT_INTERVAL", 0.05):
                 asyncio.run(run_for_a_bit())
 
             # publish_retained should have been called at least once
