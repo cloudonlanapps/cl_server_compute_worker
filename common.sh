@@ -56,6 +56,10 @@ validate_cl_server_dir() {
         return 1
     fi
 
+    if [ ! -d "$CL_SERVER_DIR" ]; then
+        mkdir -p "$CL_SERVER_DIR"
+    fi
+
     if [ ! -w "$CL_SERVER_DIR" ]; then
         echo -e "${RED}[✗] Error: No write permission for CL_SERVER_DIR: $CL_SERVER_DIR${NC}"
         echo -e "${YELLOW}    Please ensure the directory exists and you have write permissions${NC}"
@@ -102,11 +106,10 @@ setup_venv() {
     if [ ! -d "$venv_path" ]; then
         echo -e "${YELLOW}[!] Virtual environment not found. Creating at: $venv_path${NC}"
         python -m venv "$venv_path"
-        source "$venv_path/bin/activate"
-        pip install -q -e "$service_path" 2>/dev/null || true
-    else
-        source "$venv_path/bin/activate"
     fi
+    source "$venv_path/bin/activate"
+    pip install -q -e "$service_path" 2>/dev/null || true
+    
 }
 
 ################################################################################
